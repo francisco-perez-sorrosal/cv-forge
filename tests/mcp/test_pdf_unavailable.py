@@ -30,9 +30,7 @@ from datetime import UTC, datetime
 
 import anyio
 import httpx2
-import pytest
 import yaml
-from cv_forge.mcp.app import create_app
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
@@ -40,6 +38,7 @@ from mcp.shared.exceptions import MCPError
 from cv_forge.data.provider import CvDataProvider
 from cv_forge.data.release import ArtifactUnavailable, ReleaseManifest
 from cv_forge.data.snapshot import CvDataSnapshot, ReleaseAssets
+from cv_forge.mcp.app import create_app
 
 RESUME_YAML = yaml.dump(
     {"personal_info": {"name": "PDF Unavailable Test"}, "institutions": [], "work": []}
