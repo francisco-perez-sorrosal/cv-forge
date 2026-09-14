@@ -34,7 +34,16 @@ def main():
         f"Starting CV MCP server with {trspt} transport ({host}:{port}) and stateless_http={stateless_http}..."
     )
     transport_as_literal = cast(Literal["stdio", "streamable-http"], trspt)
-    mcp.run(transport=transport_as_literal)
+    if transport_as_literal == "streamable-http":
+        # mcp 2.x: host/port/stateless_http are run()-time args, not constructor args.
+        mcp.run(
+            transport=transport_as_literal,
+            host=host,
+            port=port,
+            stateless_http=stateless_http,
+        )
+    else:
+        mcp.run(transport=transport_as_literal)
 
 
 if __name__ == "__main__":

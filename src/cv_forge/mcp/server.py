@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from cv_forge.data.store import ResumeStore
 
@@ -43,9 +43,8 @@ CV_PATH = PROJECT_ROOT / "FranciscoPerezSorrosal_CV_English.pdf"
 # Eager initialization: load structured data at import time
 store = ResumeStore.load(DATA_DIR)
 
-# Initialize FastMCP server
+# Initialize MCP server. mcp 2.x moved transport args (host/port/stateless_http)
+# off the constructor onto run() — see cv_forge.mcp.main.main().
 host = os.environ.get("HOST", "0.0.0.0")
 port = int(os.environ.get("PORT", 10000))
-mcp = FastMCP(
-    "cv_francisco_perez_sorrosal", stateless_http=stateless_http, host=host, port=port
-)
+mcp = MCPServer("cv_francisco_perez_sorrosal")

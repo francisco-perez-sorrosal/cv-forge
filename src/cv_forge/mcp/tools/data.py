@@ -6,7 +6,7 @@ from typing import Literal
 
 from loguru import logger
 from mcp.types import BlobResourceContents, EmbeddedResource
-from pydantic import AnyUrl, Field
+from pydantic import Field
 
 from cv_forge.mcp.server import CV_PATH, mcp, store
 from cv_forge.models import TailoringSpec
@@ -61,7 +61,7 @@ def get_cv(
             EmbeddedResource(
                 type="resource",
                 resource=BlobResourceContents(
-                    uri=AnyUrl("fps-cv://pdf"),
+                    uri="fps-cv://pdf",
                     blob=base64.b64encode(pdf_data).decode("ascii"),
                     mimeType="application/pdf",
                 ),
