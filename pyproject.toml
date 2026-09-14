@@ -65,8 +65,8 @@ pytest = ">=8.0,<9"
 dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.tasks]
-mcps="python src/cv_forge/mcp/main.py"
-start="python src/cv_forge/mcp/main.py"
+mcps="cv-forge serve"
+start="cv-forge serve"
 cv-forge="cv-forge"
 test = "pytest tests/ -v"
 test-unit = "pytest tests/ -v -m 'not integration'"

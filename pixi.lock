@@ -462,21 +462,7 @@ packages:
 - pypi: .
   name: cv-forge
   version: 0.0.5
-  sha256: 8dfa0416f22bc4e98040c7feff65ec1d2fb750cf5878c207816d29f753ffa4b4
-  requires_dist:
-  - mcp>=2.2,<3
-  - loguru>=0.7.3,<0.8
-  - pyyaml>=6.0,<7.0
-  - jinja2>=3.1,<4
-  - pydantic>=2.12,<2.13.5
-  - cryptography>=43,<50.0.1
-  - cffi>=2.1,<2.1.1
-  requires_python: '>=3.13'
-  editable: true
-- pypi: .
-  name: cv-forge
-  version: 0.0.5
-  sha256: cf9d5a5d2f968c560307fa6ae1f2414ed4093fb614db3c568e840254b2321870
+  sha256: 3e17a57316674ad127b585b6d5216cbe2d7344188bc9ce74758ec654e846e35a
   requires_dist:
   - mcp>=2.2,<3
   - loguru>=0.7.3,<0.8

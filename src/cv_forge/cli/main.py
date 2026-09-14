@@ -24,6 +24,7 @@ workspace `scripts/render_cv.py` used before this CLI replaced it.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -35,8 +36,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from starlette.types import ASGIApp
+
 from cv_forge import __version__ as CV_FORGE_VERSION
 from cv_forge.data.local import LocalDataDirError, load_local_dir
+from cv_forge.data.provider import CvDataProvider, ReleaseFetcher
+from cv_forge.data.release import (
+    DEFAULT_CV_REPO,
+    ArtifactUnavailable,
+    GitHubReleaseFetcher,
+    format_unavailable,
+)
 from cv_forge.data.snapshot import DataOrigin, LocalDir
 from cv_forge.data.store import ResumeStore
 from cv_forge.models.resume import Resume
@@ -54,6 +64,7 @@ DEFAULT_RENDER_OUT = Path("rendered-cv")
 DEFAULT_SCHEMAS_OUT = Path("schemas")
 LATEXMK = "latexmk"
 JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+FETCH_SNAPSHOT_ASSETS = ("resume.yaml", "resume-semantics.yaml", "release.json")
 _SCHEMA_FILES: dict[str, type[Resume] | type[SemanticOverlay]] = {
     "resume.schema.json": Resume,
     "semantics.schema.json": SemanticOverlay,
@@ -193,12 +204,45 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     export_schemas_parser.set_defaults(func=_cmd_export_schemas)
 
-    for name, summary in (
-        ("fetch-snapshot", "Download a release's data assets into a directory"),
-        ("serve", "Run the MCP server locally (stdio or streamable-http)"),
-    ):
-        stub = subparsers.add_parser(name, help=summary, parents=[common])
-        stub.set_defaults(func=_not_implemented(name))
+    fetch_snapshot_parser = subparsers.add_parser(
+        "fetch-snapshot",
+        help="Download a release's data assets into a directory",
+        parents=[common],
+    )
+    fetch_snapshot_parser.add_argument(
+        "-o",
+        "--out",
+        required=True,
+        metavar="DIR",
+        help=f"Output directory for {', '.join(FETCH_SNAPSHOT_ASSETS)}",
+    )
+    fetch_snapshot_parser.add_argument(
+        "--tag",
+        default=None,
+        metavar="CALVER",
+        help="Fetch a specific release tag instead of the latest",
+    )
+    fetch_snapshot_parser.set_defaults(func=_cmd_fetch_snapshot)
+
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run the MCP server locally (stdio or streamable-http)",
+        parents=[common],
+    )
+    serve_parser.add_argument(
+        "--transport",
+        choices=("stdio", "http"),
+        default="stdio",
+        help="stdio (default) or streamable-http",
+    )
+    serve_parser.add_argument("--port", type=int, default=None, metavar="PORT")
+    serve_parser.add_argument(
+        "--data-dir",
+        default=None,
+        metavar="DIR",
+        help="Pin to a local data directory instead of the baked snapshot",
+    )
+    serve_parser.set_defaults(func=_cmd_serve)
 
     return parser
 
@@ -226,14 +270,6 @@ def _common_options_parser() -> argparse.ArgumentParser:
         "--no-color", action="store_true", help="Disable ANSI color in stderr output"
     )
     return parent
-
-
-def _not_implemented(name: str) -> Callable[[argparse.Namespace], int]:
-    def _cmd(_args: argparse.Namespace) -> int:
-        print(f"cv-forge: '{name}' is not implemented in this build.", file=sys.stderr)
-        return 2
-
-    return _cmd
 
 
 # --- render ---
@@ -532,6 +568,136 @@ def _print_schema_drift_findings(findings: list[dict[str, object]]) -> None:
     for finding in findings:
         print(f"  {finding['pointer']}    {finding['message']}", file=sys.stderr)
         print(f"    To fix:  {finding['hint']}", file=sys.stderr)
+
+
+# --- fetch-snapshot ---
+
+
+def make_release_fetcher(repo: str, *, tag: str | None = None) -> ReleaseFetcher:
+    """The one seam between the CLI and the network -- `fetch-snapshot` and
+    `serve` (its baked-snapshot fallback, via `data.bootstrap`) both resolve
+    a `ReleaseFetcher` through here, so tests can monkeypatch this attribute
+    to inject a no-network fake instead of a real `GitHubReleaseFetcher`."""
+    return GitHubReleaseFetcher(repo=repo, tag=tag)
+
+
+def _cmd_fetch_snapshot(args: argparse.Namespace) -> int:
+    repo = os.environ.get("CV_RELEASE_REPO", DEFAULT_CV_REPO)
+    fetcher = make_release_fetcher(repo, tag=args.tag)
+    result = asyncio.run(_fetch_snapshot_assets(fetcher))
+    if isinstance(result, ArtifactUnavailable):
+        _print_fetch_unavailable_error(result)
+        return 1
+
+    outputs = _write_snapshot_assets(Path(args.out), result)
+    if args.json:
+        _print_json_envelope("fetch-snapshot", {"kind": "release"}, outputs)
+    else:
+        _print_output_paths(outputs)
+    return 0
+
+
+async def _fetch_snapshot_assets(
+    fetcher: ReleaseFetcher,
+) -> dict[str, bytes] | ArtifactUnavailable:
+    """Fetch exactly `FETCH_SNAPSHOT_ASSETS`, nothing else.
+
+    `fetch_manifest()` runs first only to fail fast and to source a
+    `download_url` when the release cannot be reached at all -- its parsed
+    contents are otherwise unused, since each of the three assets is fetched
+    by its own fixed filename, not by walking `manifest.assets`.
+    """
+    manifest = await fetcher.fetch_manifest()
+    if isinstance(manifest, ArtifactUnavailable):
+        return manifest
+
+    payloads: dict[str, bytes] = {}
+    for name in FETCH_SNAPSHOT_ASSETS:
+        data = await fetcher.fetch_asset(name)
+        if isinstance(data, ArtifactUnavailable):
+            return data
+        payloads[name] = data
+    return payloads
+
+
+def _write_snapshot_assets(
+    out_dir: Path, payloads: dict[str, bytes]
+) -> list[dict[str, object]]:
+    """Stage all three files in a scratch directory, then move them into
+    `out_dir` -- a failure partway through the writes (e.g. a full disk)
+    still leaves `out_dir` with none of the three files, the same
+    all-or-nothing policy the fetch step already enforces on network failure.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        staged = [Path(tmp) / name for name in payloads]
+        for path, data in zip(staged, payloads.values(), strict=True):
+            path.write_bytes(data)
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        outputs = []
+        for path in staged:
+            dest = out_dir / path.name
+            shutil.move(str(path), str(dest))
+            outputs.append(_output_entry(path.stem, dest))
+    return outputs
+
+
+def _print_fetch_unavailable_error(unavailable: ArtifactUnavailable) -> None:
+    print(
+        f"cv-forge: fetch-snapshot could not download {unavailable.name}.\n"
+        f"  {format_unavailable(unavailable)}\n"
+        f"  To fix:  check your network connection and retry, or download "
+        f"directly:  {unavailable.download_url}",
+        file=sys.stderr,
+    )
+
+
+# --- serve ---
+
+
+def build_serve_app(args: argparse.Namespace) -> tuple[ASGIApp, CvDataProvider]:
+    """Resolve a `CvDataProvider` and build the ASGI app, without binding a
+    transport -- `_cmd_serve` calls this, then dispatches stdio/http.
+
+    Data-dir ladder (§1.2, `serve`'s own rung order): `--data-dir` first;
+    `data.bootstrap.build_provider_from_env` then checks `$CV_DATA_DIR`
+    itself and, failing that, falls through to the baked snapshot with a
+    real release fetcher -- the one command where no local
+    directory is not an error. `make_release_fetcher` is never on the
+    `--data-dir` branch: a local directory yields a `Pinned` provider with
+    no fetcher at all.
+    """
+    from cv_forge.data.bootstrap import build_provider_from_env
+    from cv_forge.mcp.app import create_app
+
+    if args.data_dir:
+        provider = CvDataProvider(
+            initial=load_local_dir(Path(args.data_dir)), fetcher=None
+        )
+    else:
+        provider = build_provider_from_env()
+    return create_app(provider, stateless=True), provider
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    app, provider = build_serve_app(args)
+    if args.transport == "http":
+        import uvicorn
+
+        from cv_forge.mcp.main import DEFAULT_PORT
+
+        host = os.environ.get("HOST", "0.0.0.0")
+        port = args.port or int(
+            os.environ.get("PORT", os.environ.get("FASTMCP_PORT", DEFAULT_PORT))
+        )
+        uvicorn.run(app, host=host, port=port, log_level="info")
+        return 0
+
+    from cv_forge.mcp.server import bound_provider, mcp
+
+    with bound_provider(provider):
+        mcp.run(transport="stdio")
+    return 0
 
 
 if __name__ == "__main__":

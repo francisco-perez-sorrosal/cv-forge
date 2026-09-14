@@ -143,12 +143,21 @@ class GitHubReleaseFetcher:
     """
 
     def __init__(
-        self, repo: str, *, timeout: float = DEFAULT_FETCH_TIMEOUT_SECONDS
+        self,
+        repo: str,
+        *,
+        tag: str | None = None,
+        timeout: float = DEFAULT_FETCH_TIMEOUT_SECONDS,
     ) -> None:
         self._repo = repo
+        self._tag = tag
         self._timeout = timeout
 
     def download_url(self, name: str) -> str:
+        if self._tag is not None:
+            return (
+                f"https://github.com/{self._repo}/releases/download/{self._tag}/{name}"
+            )
         return f"https://github.com/{self._repo}/releases/latest/download/{name}"
 
     async def fetch_manifest(self) -> ReleaseManifest | ArtifactUnavailable:
@@ -160,7 +169,7 @@ class GitHubReleaseFetcher:
         except ValueError:
             return ArtifactUnavailable(
                 name=RELEASE_MANIFEST_ASSET,
-                tag=None,
+                tag=self._tag,
                 download_url=self.download_url(RELEASE_MANIFEST_ASSET),
                 reason=UnavailableReason.HTTP_ERROR,
             )
@@ -177,12 +186,15 @@ class GitHubReleaseFetcher:
                 response = await client.get(url)
         except httpx2.TimeoutException:
             return ArtifactUnavailable(
-                name=name, tag=None, download_url=url, reason=UnavailableReason.TIMEOUT
+                name=name,
+                tag=self._tag,
+                download_url=url,
+                reason=UnavailableReason.TIMEOUT,
             )
         except httpx2.HTTPError:
             return ArtifactUnavailable(
                 name=name,
-                tag=None,
+                tag=self._tag,
                 download_url=url,
                 reason=UnavailableReason.HTTP_ERROR,
             )
@@ -190,7 +202,7 @@ class GitHubReleaseFetcher:
         if response.status_code == 404:
             return ArtifactUnavailable(
                 name=name,
-                tag=None,
+                tag=self._tag,
                 download_url=url,
                 reason=UnavailableReason.NO_RELEASE,
                 http_status=response.status_code,
@@ -198,7 +210,7 @@ class GitHubReleaseFetcher:
         if response.status_code >= 400:
             return ArtifactUnavailable(
                 name=name,
-                tag=None,
+                tag=self._tag,
                 download_url=url,
                 reason=UnavailableReason.HTTP_ERROR,
                 http_status=response.status_code,
