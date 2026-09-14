@@ -77,8 +77,10 @@ if [ -z "$ANYBUILD" ]; then
     fi
 fi
 
-if [ "$ALLOW_DIRTY" -ne 1 ] && [ -n "$(git status --porcelain)" ]; then
-    fail "working tree is not clean (commit/stash changes, or pass --allow-dirty)"
+# Untracked files are ignored on purpose: staging copies `git ls-files` only, so
+# they can never reach the image; only tracked-but-uncommitted changes matter.
+if [ "$ALLOW_DIRTY" -ne 1 ] && [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    fail "working tree has uncommitted tracked changes (commit/stash them, or pass --allow-dirty)"
 fi
 
 if [ -f scripts/check_wasix_ceilings.py ]; then
