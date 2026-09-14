@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: dev
+          cache: true
+
+      - name: Lint (ruff)
+        run: pixi run -e dev uvx ruff check .
+
+      - name: Unit tests (no cv checkout needed, REQ-15)
+        run: pixi run -e dev python -m pytest tests/ -m 'not integration' -q
+
+  wasix-ceilings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: dev
+          cache: true
+
+      # Guards against the Risk Assessment row-1 incident: a native-extension
+      # dependency (pydantic-core/cryptography/cffi) drifting past what
+      # Wasmer Edge's WASIX index can build. See scripts/check_wasix_ceilings.py.
+      - name: Check WASIX ceilings
+        run: pixi run -e dev python scripts/check_wasix_ceilings.py --json

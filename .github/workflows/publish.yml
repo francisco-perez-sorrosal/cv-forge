@@ -1,0 +1,223 @@
+name: Publish CV
+
+# Reusable workflow, called by `cv` (the data repo) on a tag push or a
+# maintainer-dispatched republish. See SYSTEMS_PLAN.md § Cross-Repo
+# Contract §1 for the frozen input/secret/asset contract this file
+# implements -- do not change the input names or the asset filenames
+# without a `v2` (SYSTEMS_PLAN.md's coupling is `@v1`, a moving major tag).
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The cv git ref to render from
+        type: string
+        default: ${{ github.ref_name }}
+      data-path:
+        description: Directory inside cv holding the YAML
+        type: string
+        default: cv-data
+      formats:
+        description: Comma-separated render set (or "all")
+        type: string
+        default: pdf,tex,typst,md,html
+      deploy-site:
+        description: Whether to publish the HTML to the static site
+        type: boolean
+        default: true
+      site-app:
+        description: Wasmer static-site app name
+        type: string
+        default: fps-cv
+      draft:
+        description: Create the release as a draft for inspection
+        type: boolean
+        default: false
+    secrets:
+      WASMER_TOKEN:
+        description: Required iff deploy-site is true
+        required: false
+
+# The caller supplies `permissions: contents: write` and its own
+# GITHUB_TOKEN creates the release (SYSTEMS_PLAN.md § Cross-Repo Contract
+# §1) -- this workflow requests only what it uses.
+permissions: {}
+
+concurrency:
+  group: publish-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout cv (data repo) at the requested ref
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.1
+        with:
+          repository: francisco-perez-sorrosal/cv
+          ref: ${{ inputs.ref }}
+          path: cv-src
+          persist-credentials: false
+
+      # `job.workflow_repository` / `job.workflow_sha` are the documented
+      # way for a called reusable workflow to check out its own source at
+      # the exact ref the caller pinned (`uses: .../publish.yml@v1`),
+      # rather than the caller's repository.
+      - name: Checkout cv-forge at the pinned ref that called this workflow
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: cv-forge
+          persist-credentials: false
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          manifest-path: cv-forge/pyproject.toml
+          environments: dev
+
+      - name: Setup TinyTeX
+        if: contains(inputs.formats, 'pdf') || inputs.formats == 'all'
+        uses: r-lib/actions/setup-tinytex@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+
+      - name: Install LaTeX packages
+        if: contains(inputs.formats, 'pdf') || inputs.formats == 'all'
+        run: |
+          tlmgr install moderncv geometry babel babel-english xcolor \
+            fontawesome5 multirow arydshln collection-fontsrecommended \
+            biblatex biber latexmk collection-latex
+
+      - name: Render the CV
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          pixi run -e dev --manifest-path cv-forge/pyproject.toml \
+            cv-forge render -f "${{ inputs.formats }}" \
+            --data-dir "cv-src/${{ inputs.data-path }}" \
+            -o dist --json > dist/render.json
+          cat dist/render.json
+
+      - name: Copy the raw YAML data assets
+        run: |
+          cp "cv-src/${{ inputs.data-path }}/resume.yaml" dist/resume.yaml
+          cp "cv-src/${{ inputs.data-path }}/resume-semantics.yaml" dist/resume-semantics.yaml
+
+      - name: Verify the release asset set
+        run: |
+          set -euo pipefail
+          for f in resume.yaml resume-semantics.yaml \
+                   FranciscoPerezSorrosal_CV.pdf FranciscoPerezSorrosal_CV.tex \
+                   FranciscoPerezSorrosal_CV.typ FranciscoPerezSorrosal_CV.md \
+                   FranciscoPerezSorrosal_CV.html; do
+            test -s "dist/$f" || { echo "::error::missing or empty asset dist/$f"; exit 1; }
+          done
+
+      - name: Build release.json (schema v1)
+        env:
+          TAG: ${{ inputs.ref }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import tomllib
+
+          dist = pathlib.Path("dist")
+          tag = os.environ["TAG"]
+          version = tomllib.loads(
+              pathlib.Path("cv-forge/pyproject.toml").read_text()
+          )["project"]["version"]
+
+          def hashed(path: pathlib.Path) -> dict:
+              data = path.read_bytes()
+              return {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+          rendered = {
+              o["path"].rsplit("/", 1)[-1]: {"size": o["bytes"], "sha256": o["sha256"]}
+              for o in json.loads((dist / "render.json").read_text())["outputs"]
+          }
+          raw = {name: hashed(dist / name) for name in ("resume.yaml", "resume-semantics.yaml")}
+
+          manifest = {
+              "schema_version": 1,
+              "tag": tag,
+              "published_at": datetime.datetime.now(datetime.timezone.utc)
+              .isoformat(timespec="seconds")
+              .replace("+00:00", "Z"),
+              "cv_forge_version": version,
+              "assets": {**rendered, **raw},
+          }
+          (dist / "release.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Create or update the GitHub Release on the caller's repo
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+          assets=(resume.yaml resume-semantics.yaml \
+                  FranciscoPerezSorrosal_CV.pdf FranciscoPerezSorrosal_CV.tex \
+                  FranciscoPerezSorrosal_CV.typ FranciscoPerezSorrosal_CV.md \
+                  FranciscoPerezSorrosal_CV.html release.json)
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            # Republish (REQ-04): tag/release/latest pointer unchanged, assets replaced.
+            gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
+          else
+            draft_flag=()
+            if [ "$DRAFT" = "true" ]; then draft_flag=(--draft); fi
+            gh release create "$TAG" "${assets[@]}" --repo "$REPO" \
+              --latest --title "$TAG" "${draft_flag[@]}"
+          fi
+
+      - name: Setup Wasmer CLI
+        if: inputs.deploy-site
+        uses: wasmerio/setup-wasmer@24b15c95293d23f89c68bd40dac76338f773e924 # v3.1
+        with:
+          version: '7.4.1'
+
+      - name: Stage the static site
+        if: inputs.deploy-site
+        run: |
+          set -euo pipefail
+          mkdir -p cv-forge/deploy/site/public
+          cp dist/FranciscoPerezSorrosal_CV.html cv-forge/deploy/site/public/index.html
+
+      - name: Deploy the static site
+        if: inputs.deploy-site
+        working-directory: cv-forge/deploy/site
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WASMER_TOKEN:-}" ]; then
+            echo "::error::deploy-site is true but WASMER_TOKEN is not set"
+            exit 1
+          fi
+          wasmer deploy --non-interactive
+
+      - name: Verify the published site is live (REQ-06)
+        if: inputs.deploy-site
+        env:
+          TAG: ${{ inputs.ref }}
+          SITE_APP: ${{ inputs.site-app }}
+        run: |
+          set -euo pipefail
+          url="https://${SITE_APP}.wasmer.app/"
+          body="$(curl -fsS --retry 5 --retry-delay 5 "$url")"
+          if ! grep -qF "$TAG" <<<"$body"; then
+            echo "::error::$url did not contain the release tag $TAG -- publish considered failed"
+            echo "::notice::The HTML renderer does not yet embed the release tag anywhere in the page (verified 2026-09-13); this check will not pass until that template change lands (tracked for M1.31/M2, see LEARNINGS.md)."
+            exit 1
+          fi
+          echo "OK: $url is live and contains tag $TAG"
