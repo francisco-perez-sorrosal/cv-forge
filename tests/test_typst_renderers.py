@@ -4,18 +4,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from cv_mcp_server.renderers import (
-    _typst_escape_filter,
-    _typst_period_filter,
-    render_typst,
-    render_tailored_typst,
-)
-from cv_mcp_server.models.tailoring import (
+from cv_forge.models.tailoring import (
     EntryEmphasis,
     SectionDirective,
     TailoringSpec,
 )
-
+from cv_forge.render.renderers import (
+    _typst_escape_filter,
+    _typst_period_filter,
+    render_tailored_typst,
+    render_typst,
+)
 
 # --- Typst escape filter ---
 
@@ -164,7 +163,9 @@ class TestRenderTailoredTypst:
     def test_render_tailored_typst_entry_omission(self, minimal_store):
         spec = self._make_spec(
             entry_emphasis=[
-                EntryEmphasis(entry_id="work-acme-2023", weight=0, reason="Not relevant"),
+                EntryEmphasis(
+                    entry_id="work-acme-2023", weight=0, reason="Not relevant"
+                ),
             ],
         )
         output = render_tailored_typst(minimal_store, spec)

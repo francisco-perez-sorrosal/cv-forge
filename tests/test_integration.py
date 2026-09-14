@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cv_mcp_server.renderers import (
+from cv_forge.models.tailoring import SectionDirective, TailoringSpec
+from cv_forge.render.renderers import (
     get_section,
     render_latex,
     render_markdown,
@@ -13,7 +14,6 @@ from cv_mcp_server.renderers import (
     render_tailored_typst,
     render_typst,
 )
-from cv_mcp_server.models.tailoring import SectionDirective, TailoringSpec
 
 pytestmark = pytest.mark.integration
 
@@ -100,7 +100,9 @@ class TestRenderTypstRealData:
             job_title="Senior ML Engineer",
             company="Test Corp",
             section_order=[
-                SectionDirective(section_name="Professional Experience", include=True, position=0),
+                SectionDirective(
+                    section_name="Professional Experience", include=True, position=0
+                ),
                 SectionDirective(section_name="Skills", include=True, position=1),
                 SectionDirective(section_name="Education", include=True, position=2),
             ],
@@ -128,6 +130,7 @@ class TestCrossReferences:
     def test_no_dangling_warnings(self, real_store):
         warnings: list[str] = []
         from loguru import logger
+
         handler_id = logger.add(lambda msg: warnings.append(str(msg)), level="WARNING")
         try:
             real_store._validate_cross_references()
@@ -148,14 +151,14 @@ class TestWorkQueries:
 
 class TestGetTailoredCvTool:
     def test_invalid_json_returns_schema(self):
-        from cv_mcp_server.tools.data import get_tailored_cv
+        from cv_forge.mcp.tools.data import get_tailored_cv
 
         result = get_tailored_cv('{"not": "a valid spec"}')
         assert "Invalid TailoringSpec" in result
         assert "json_schema" in result.lower() or "properties" in result
 
     def test_empty_string_returns_schema(self):
-        from cv_mcp_server.tools.data import get_tailored_cv
+        from cv_forge.mcp.tools.data import get_tailored_cv
 
         result = get_tailored_cv("")
         assert "Invalid TailoringSpec" in result
@@ -167,7 +170,9 @@ class TestRenderTailoredLatexRealData:
             job_title="Senior ML Engineer",
             company="Test Corp",
             section_order=[
-                SectionDirective(section_name="Professional Experience", include=True, position=0),
+                SectionDirective(
+                    section_name="Professional Experience", include=True, position=0
+                ),
                 SectionDirective(section_name="Skills", include=True, position=1),
                 SectionDirective(section_name="Education", include=True, position=2),
             ],
@@ -183,7 +188,7 @@ class TestRenderTailoredLatexRealData:
     def test_section_names_match_list_cv_sections(self, real_store):
         """Regression test for F-02: section names in tailored template must match
         the names returned by list_cv_sections (markdown renderer)."""
-        from cv_mcp_server.renderers import section_names
+        from cv_forge.render.renderers import section_names
 
         md_names = section_names(real_store)
         # These three sections had mismatched names before the fix
@@ -196,8 +201,12 @@ class TestRenderTailoredLatexRealData:
             assert name in md_names, f"'{name}' not in list_cv_sections output"
             spec = TailoringSpec(
                 job_title="Test",
-                section_order=[SectionDirective(section_name=name, include=True, position=0)],
+                section_order=[
+                    SectionDirective(section_name=name, include=True, position=0)
+                ],
             )
             tailored = render_tailored_latex(real_store, spec)
             # Each section renders its LaTeX \section{} -- verify it appears
-            assert r"\section{" in tailored, f"Section '{name}' not rendered in tailored output"
+            assert r"\section{" in tailored, (
+                f"Section '{name}' not rendered in tailored output"
+            )

@@ -4,8 +4,8 @@ import json
 
 from pydantic import BaseModel, Field
 
-from cv_mcp_server.server import mcp, store
-from cv_mcp_server.renderers import render_work_entry
+from cv_forge.mcp.server import mcp, store
+from cv_forge.render.renderers import render_work_entry
 
 
 @mcp.tool(

@@ -5,13 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cv_mcp_server.models.tailoring import (
+from cv_forge.models.tailoring import (
     EntryEmphasis,
     KeywordHighlight,
     SectionDirective,
     TailoringSpec,
 )
-
 
 # --- KeywordHighlight ---
 
@@ -147,7 +146,11 @@ class TestTailoringSpecRoundTrip:
             "job_title": "Senior ML Engineer",
             "company": "Acme Corp",
             "section_order": [
-                {"section_name": "Professional Experience", "include": True, "position": 0},
+                {
+                    "section_name": "Professional Experience",
+                    "include": True,
+                    "position": 0,
+                },
                 {"section_name": "Skills", "include": True, "position": 1},
                 {"section_name": "Education", "include": True, "position": 2},
                 {"section_name": "Hobbies", "include": False, "position": 3},

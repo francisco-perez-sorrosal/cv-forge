@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from cv_mcp_server.models.resume import (
+from cv_forge.data.store import ResumeStore
+from cv_forge.models.resume import (
     Conference,
     Education,
     EntryId,
@@ -21,11 +22,11 @@ from cv_mcp_server.models.resume import (
     Project,
     Publication,
     Resume,
-    SkillGroup,
     Skill,
+    SkillGroup,
     WorkEntry,
 )
-from cv_mcp_server.models.semantics import (
+from cv_forge.models.semantics import (
     AudienceRelevance,
     EntryAnnotations,
     ProficiencyLevel,
@@ -39,8 +40,6 @@ from cv_mcp_server.models.semantics import (
     TopicAnnotation,
     TopicTaxonomy,
 )
-from cv_mcp_server.store import ResumeStore
-
 
 DATA_DIR = Path(__file__).parent.parent / "cv-data"
 

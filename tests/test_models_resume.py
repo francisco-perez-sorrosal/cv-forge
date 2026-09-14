@@ -5,9 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cv_mcp_server.models.resume import (
-    EntryId,
-    Institution,
+from cv_forge.models.resume import (
     InstitutionType,
     LanguageFluency,
     PatentStatus,
@@ -17,7 +15,6 @@ from cv_mcp_server.models.resume import (
     ResumeEntry,
     WorkEntry,
 )
-
 
 # --- Enum values ---
 
@@ -33,9 +30,14 @@ class TestEnums:
 
     def test_institution_type_values(self):
         expected = {
-            "company", "university", "research_institution",
-            "education_platform", "government", "consortium",
-            "cooperative", "independent",
+            "company",
+            "university",
+            "research_institution",
+            "education_platform",
+            "government",
+            "consortium",
+            "cooperative",
+            "independent",
         }
         assert {t.value for t in InstitutionType} == expected
 
@@ -58,12 +60,14 @@ class TestCamelCaseAliases:
         assert p.release_date == "2021"
 
     def test_country_code_alias(self):
-        from cv_mcp_server.models.resume import Location
+        from cv_forge.models.resume import Location
+
         loc = Location(**{"countryCode": "US"})
         assert loc.country_code == "US"
 
     def test_study_type_alias(self):
-        from cv_mcp_server.models.resume import Education
+        from cv_forge.models.resume import Education
+
         e = Education(id="e1", institution_id="i1", **{"studyType": "Ph.D."})
         assert e.study_type == "Ph.D."
 
@@ -151,16 +155,20 @@ class TestResumeMethods:
     def test_all_entry_ids_completeness(self, minimal_resume):
         ids = minimal_resume.all_entry_ids()
         expected = {
-            "inst-acme", "inst-testuni",
-            "work-acme-2023", "work-testuni-2020",
+            "inst-acme",
+            "inst-testuni",
+            "work-acme-2023",
+            "work-testuni-2020",
             "proj-widget",
             "pub-nlp-2019",
             "patent-widget-2022",
             "edu-testuni-phd",
             "skill-programming",
             "lang-en",
-            "conf-icml-2019", "conf-acl-review-2020",
-            "member-asf", "member-acm",
+            "conf-icml-2019",
+            "conf-acl-review-2020",
+            "member-asf",
+            "member-acm",
         }
         assert ids == expected
 

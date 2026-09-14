@@ -28,7 +28,7 @@ def load_prompt(prompt_name: str) -> dict:
         raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
 
     try:
-        with open(prompt_file, 'r', encoding='utf-8') as f:
+        with open(prompt_file, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     except yaml.YAMLError as e:

@@ -4,7 +4,8 @@ import sys
 from typing import Literal, cast
 
 from loguru import logger
-from cv_mcp_server.server import mcp, trspt, host, port, stateless_http
+
+from cv_forge.mcp.server import host, mcp, port, stateless_http, trspt
 
 
 def _register_modules():
@@ -15,11 +16,12 @@ def _register_modules():
     """
     import importlib
     import pkgutil
-    import cv_mcp_server.tools
 
-    for _, name, _ in pkgutil.iter_modules(cv_mcp_server.tools.__path__):
-        importlib.import_module(f"cv_mcp_server.tools.{name}")
-    importlib.import_module("cv_mcp_server.resources")
+    import cv_forge.mcp.tools
+
+    for _, name, _ in pkgutil.iter_modules(cv_forge.mcp.tools.__path__):
+        importlib.import_module(f"cv_forge.mcp.tools.{name}")
+    importlib.import_module("cv_forge.mcp.resources")
 
 
 _register_modules()
@@ -28,8 +30,10 @@ _register_modules()
 def main():
     """Initialize and run the server with the specified transport."""
     logger.info(f"Python version: {sys.version}")
-    logger.info(f"Starting CV MCP server with {trspt} transport ({host}:{port}) and stateless_http={stateless_http}...")
-    transport_as_literal = cast(Literal['stdio', 'streamable-http'], trspt)
+    logger.info(
+        f"Starting CV MCP server with {trspt} transport ({host}:{port}) and stateless_http={stateless_http}..."
+    )
+    transport_as_literal = cast(Literal["stdio", "streamable-http"], trspt)
     mcp.run(transport=transport_as_literal)
 
 

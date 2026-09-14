@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import yaml
 
-from cv_mcp_server.models.resume import EntryId, Institution, Project, WorkEntry
-from cv_mcp_server.models.semantics import (
+from cv_forge.data.store import ResumeStore
+from cv_forge.models.resume import EntryId, Institution, Project, WorkEntry
+from cv_forge.models.semantics import (
     EntryAnnotations,
     Provenance,
     Relationship,
@@ -16,8 +15,6 @@ from cv_mcp_server.models.semantics import (
     SemanticOverlay,
     TopicAnnotation,
 )
-from cv_mcp_server.store import ResumeStore
-
 
 # --- Construction and properties ---
 
@@ -73,7 +70,10 @@ class TestEntryLabel:
         assert minimal_store.entry_label("proj-widget") == "Widget Builder"
 
     def test_patent_uses_title(self, minimal_store):
-        assert minimal_store.entry_label("patent-widget-2022") == "Widget Generation Method"
+        assert (
+            minimal_store.entry_label("patent-widget-2022")
+            == "Widget Generation Method"
+        )
 
     def test_work_uses_position(self, minimal_store):
         assert minimal_store.entry_label("work-acme-2023") == "Senior Engineer"
@@ -170,7 +170,9 @@ class TestAnnotateEntry:
             entry_id=EntryId("pub-nlp-2019"),
             topics=[
                 TopicAnnotation(
-                    topic_id="ai.ml", confidence=0.95, provenance=Provenance.llm,
+                    topic_id="ai.ml",
+                    confidence=0.95,
+                    provenance=Provenance.llm,
                 ),
             ],
         )
@@ -186,7 +188,9 @@ class TestAnnotateEntry:
             entry_id=EntryId("work-acme-2023"),
             topics=[
                 TopicAnnotation(
-                    topic_id="systems", confidence=0.7, provenance=Provenance.human,
+                    topic_id="systems",
+                    confidence=0.7,
+                    provenance=Provenance.human,
                 ),
             ],
         )
@@ -210,7 +214,9 @@ class TestAnnotateEntry:
             entry_id=EntryId("pub-nlp-2019"),
             topics=[
                 TopicAnnotation(
-                    topic_id="ai", confidence=0.5, provenance=Provenance.llm,
+                    topic_id="ai",
+                    confidence=0.5,
+                    provenance=Provenance.llm,
                 ),
             ],
         )
@@ -261,6 +267,7 @@ class TestCrossReferenceValidation:
     def test_no_warning_with_valid_data(self, minimal_store):
         warnings: list[str] = []
         from loguru import logger
+
         handler_id = logger.add(lambda msg: warnings.append(str(msg)), level="WARNING")
         try:
             minimal_store._validate_cross_references()
@@ -277,6 +284,7 @@ class TestCrossReferenceValidation:
         store = ResumeStore(minimal_resume, semantics, tmp_path / "sem.yaml")
         warnings: list[str] = []
         from loguru import logger
+
         handler_id = logger.add(
             lambda msg: warnings.append(str(msg)),
             level="WARNING",

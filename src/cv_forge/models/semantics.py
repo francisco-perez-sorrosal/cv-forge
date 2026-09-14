@@ -11,13 +11,14 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cv_mcp_server.models.resume import EntryId
-
+from cv_forge.models.resume import EntryId
 
 # --- Enums ---
 
+
 class Provenance(str, Enum):
     """Who authored this annotation."""
+
     human = "human"
     llm = "llm"
     derived = "derived"  # Computed from other annotations
@@ -25,19 +26,21 @@ class Provenance(str, Enum):
 
 class RelationshipType(str, Enum):
     """Types of cross-entry relationships."""
+
     relates_to = "relates-to"
     derived_from = "derived-from"
     resulted_in = "resulted-in"
     uses_skill = "uses-skill"
-    published_as = "published-as"       # work project -> publication
-    patented_as = "patented-as"         # work project -> patent
-    presented_at = "presented-at"       # work/publication -> conference
-    supervised_by = "supervised-by"     # project -> education/research
+    published_as = "published-as"  # work project -> publication
+    patented_as = "patented-as"  # work project -> patent
+    presented_at = "presented-at"  # work/publication -> conference
+    supervised_by = "supervised-by"  # project -> education/research
     continuation_of = "continuation-of"  # project -> earlier project
 
 
 class ProficiencyLevel(str, Enum):
     """Skill proficiency on a standardized scale."""
+
     novice = "novice"
     beginner = "beginner"
     intermediate = "intermediate"
@@ -48,13 +51,15 @@ class ProficiencyLevel(str, Enum):
 
 class RelevanceLevel(str, Enum):
     """How relevant an entry is for a given audience."""
-    primary = "primary"       # Must include
-    secondary = "secondary"   # Include if space allows
-    tertiary = "tertiary"     # Omit unless specifically asked
-    exclude = "exclude"       # Never include for this audience
+
+    primary = "primary"  # Must include
+    secondary = "secondary"  # Include if space allows
+    tertiary = "tertiary"  # Omit unless specifically asked
+    exclude = "exclude"  # Never include for this audience
 
 
 # --- Topic Taxonomy ---
+
 
 class Topic(BaseModel):
     """A topic in the hierarchical taxonomy.
@@ -64,6 +69,7 @@ class Topic(BaseModel):
 
     The ID encodes the hierarchy — 'ai.ml' is the parent of 'ai.ml.nlp'.
     """
+
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(
@@ -73,12 +79,14 @@ class Topic(BaseModel):
     label: str = Field(description="Human-readable display name")
     description: str = ""
     aliases: list[str] = Field(
-        [], description="Alternative names (e.g., ['NLP', 'natural language processing'])"
+        [],
+        description="Alternative names (e.g., ['NLP', 'natural language processing'])",
     )
 
 
 class TopicTaxonomy(BaseModel):
     """The full topic taxonomy. Defined once, referenced by annotations."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     version: str = "1.0.0"
@@ -97,39 +105,47 @@ class TopicTaxonomy(BaseModel):
 
 # --- Per-entry annotations ---
 
+
 class TopicAnnotation(BaseModel):
     """A topic assigned to a resume entry."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     topic_id: str = Field(alias="topicId", description="Reference to taxonomy topic ID")
     confidence: float = Field(ge=0.0, le=1.0, description="Classification certainty")
     provenance: Provenance
     rationale: str = Field("", description="Why this topic was assigned")
-    primary: bool = Field(False, description="Primary topic for the entry (vs supporting)")
+    primary: bool = Field(
+        False, description="Primary topic for the entry (vs supporting)"
+    )
 
 
 class TemporalRelevance(BaseModel):
     """How a topic's relevance to the candidate changes over time."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     topic_id: str = Field(alias="topicId")
     period: str = Field(description="Date range (e.g., '2010-2015', '2020-present')")
     weight: float = Field(
-        ge=0.0, le=1.0,
-        description="Relevance weight during this period (1.0 = primary focus)"
+        ge=0.0,
+        le=1.0,
+        description="Relevance weight during this period (1.0 = primary focus)",
     )
     note: str = ""
 
 
 class SkillProficiency(BaseModel):
     """Track skill proficiency at a specific entry/time."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     topic_id: str = Field(alias="topicId", description="Skill as topic ID")
     level: ProficiencyLevel
     entry_id: EntryId = Field(
-        EntryId(""), alias="entryId",
-        description="Resume entry where this was demonstrated. Empty = overall/current level."
+        EntryId(""),
+        alias="entryId",
+        description="Resume entry where this was demonstrated. Empty = overall/current level.",
     )
     evidence: str = Field("", description="What demonstrates this proficiency level")
     provenance: Provenance = Provenance.human
@@ -137,6 +153,7 @@ class SkillProficiency(BaseModel):
 
 class Relationship(BaseModel):
     """A directed relationship between two resume entries."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     source_id: EntryId = Field(alias="sourceId", description="From entry ID")
@@ -149,17 +166,23 @@ class Relationship(BaseModel):
 
 class ImpactIndicator(BaseModel):
     """Quantifiable impact beyond citations."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     entry_id: EntryId = Field(alias="entryId")
-    metric: str = Field(description="What is measured (e.g., 'team_size', 'users_served')")
+    metric: str = Field(
+        description="What is measured (e.g., 'team_size', 'users_served')"
+    )
     value: str = Field(description="The value (string to allow '50+', '$2M', etc.)")
-    scope: str = Field("", description="Context (e.g., 'organization-wide', 'team-level')")
+    scope: str = Field(
+        "", description="Context (e.g., 'organization-wide', 'team-level')"
+    )
     provenance: Provenance = Provenance.human
 
 
 class AudienceRelevance(BaseModel):
     """How relevant an entry is for a specific audience type."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     entry_id: EntryId = Field(alias="entryId")
@@ -174,6 +197,7 @@ class AudienceRelevance(BaseModel):
 
 class EntrySummary(BaseModel):
     """One-line summary of a resume entry, optionally audience-specific."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     entry_id: EntryId = Field(alias="entryId")
@@ -185,8 +209,10 @@ class EntrySummary(BaseModel):
 
 # --- Aggregated per-entry container ---
 
+
 class EntryAnnotations(BaseModel):
     """All annotations for a single resume entry, keyed by entry ID."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     entry_id: EntryId = Field(alias="entryId")
@@ -198,6 +224,7 @@ class EntryAnnotations(BaseModel):
 
 # --- Top-level Semantic Overlay ---
 
+
 class SemanticOverlay(BaseModel):
     """Semantic annotations for all resume entries.
 
@@ -205,6 +232,7 @@ class SemanticOverlay(BaseModel):
     Designed to be sparse — entries without annotations are simply absent.
     LLMs populate this over time; humans can also edit directly.
     """
+
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     version: str = "1.0.0"
@@ -222,11 +250,14 @@ class SemanticOverlay(BaseModel):
 
     def relationships_for(self, entry_id: str) -> list[Relationship]:
         return [
-            r for r in self.relationships
+            r
+            for r in self.relationships
             if r.source_id == entry_id or r.target_id == entry_id
         ]
 
-    def entries_by_topic(self, topic_id: str, include_descendants: bool = True) -> list[str]:
+    def entries_by_topic(
+        self, topic_id: str, include_descendants: bool = True
+    ) -> list[str]:
         """Return entry IDs annotated with this topic (or its descendants)."""
         match_ids = (
             set(self.taxonomy.descendants(topic_id))

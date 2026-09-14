@@ -49,18 +49,18 @@ d2 docs/diagrams/architecture/rendered/components.d2 docs/diagrams/architecture/
 
 | Component | Responsibility | Key Files |
 |-----------|---------------|-----------|
-| models | Pydantic definitions of the resume hierarchy (`Resume`, `WorkEntry`, `Project`, `Publication`, …), the semantic overlay (`SemanticOverlay`, `Topic`, `Relationship`, `SkillProficiency`) and the tailoring spec (`TailoringSpec`, `SectionDirective`, `EntryEmphasis`). Follow `ConfigDict(populate_by_name=True)` + `Field()`. | `src/cv_mcp_server/models/resume.py`, `models/semantics.py`, `models/tailoring.py` |
-| data-store | `ResumeStore`: loads both YAML files from a directory, validates cross-references between the resume and its overlay, builds the entry-by-ID index, and answers the query methods every tool reads through. | `src/cv_mcp_server/store.py` |
-| render | Jinja2 renderers for markdown, LaTeX (moderncv), HTML (self-contained, interactive) and Typst (moderner-cv), plus the tailored LaTeX and Typst variants, and the per-section markdown split. | `src/cv_mcp_server/renderers.py`, `src/cv_mcp_server/templates/` (13 `.j2` files) |
-| mcp | The shared `FastMCP` instance and transport configuration, 17 `fps-cv://` resources, and 16 tools split across data, query, semantic and summarize modules. Tool and resource modules are auto-discovered by `pkgutil` walk at startup. | `src/cv_mcp_server/server.py`, `resources.py`, `main.py`, `tools/{data,query,semantic,summarize}.py` |
+| models | Pydantic definitions of the resume hierarchy (`Resume`, `WorkEntry`, `Project`, `Publication`, …), the semantic overlay (`SemanticOverlay`, `Topic`, `Relationship`, `SkillProficiency`) and the tailoring spec (`TailoringSpec`, `SectionDirective`, `EntryEmphasis`). Follow `ConfigDict(populate_by_name=True)` + `Field()`. | `src/cv_forge/models/resume.py`, `models/semantics.py`, `models/tailoring.py` |
+| data-store | `ResumeStore`: loads both YAML files from a directory, validates cross-references between the resume and its overlay, builds the entry-by-ID index, and answers the query methods every tool reads through. | `src/cv_forge/data/store.py` |
+| render | Jinja2 renderers for markdown, LaTeX (moderncv), HTML (self-contained, interactive) and Typst (moderner-cv), plus the tailored LaTeX and Typst variants, and the per-section markdown split. | `src/cv_forge/render/renderers.py`, `src/cv_forge/render/templates/` (13 `.j2` files) |
+| mcp | The shared `FastMCP` instance and transport configuration, 17 `fps-cv://` resources, and 16 tools split across data, query, semantic and summarize modules. Tool and resource modules are auto-discovered by `pkgutil` walk at startup. | `src/cv_forge/mcp/server.py`, `resources.py`, `main.py`, `tools/{data,query,semantic,summarize}.py` |
 | cli | Renders a chosen format to `rendered-cv/` for a quick preview, or to a dated `latest-cv/` snapshot with optional `latexmk` compilation and a `latest.pdf` copy. | `scripts/render_cv.py` |
 
 ### 3b. Capabilities
 
 | Capability | Responsibility | Key Files |
 |-----------|---------------|-----------|
-| Job-targeted tailoring | Reorder sections, filter or de-emphasise entries and override the profile summary for a specific job description, rendering to LaTeX or Typst for compilation. Driven by the `cv-tailoring` skill through `get_tailored_cv`. | `models/tailoring.py`, `renderers.py`, `tools/data.py`, `templates/cv_tailored.{tex,typ}.j2` |
-| Semantic enrichment | Topic taxonomy, cross-entry relationships and skill proficiency layered over the structured resume, surfaced through the query tools and through enriched markdown, HTML and Typst renders. | `models/semantics.py`, `store.py`, `tools/semantic.py` |
+| Job-targeted tailoring | Reorder sections, filter or de-emphasise entries and override the profile summary for a specific job description, rendering to LaTeX or Typst for compilation. Driven by the `cv-tailoring` skill through `get_tailored_cv`. | `models/tailoring.py`, `render/renderers.py`, `mcp/tools/data.py`, `render/templates/cv_tailored.{tex,typ}.j2` |
+| Semantic enrichment | Topic taxonomy, cross-entry relationships and skill proficiency layered over the structured resume, surfaced through the query tools and through enriched markdown, HTML and Typst renders. | `models/semantics.py`, `data/store.py`, `mcp/tools/semantic.py` |
 
 <!-- aac:end -->
 
@@ -80,7 +80,7 @@ d2 docs/diagrams/architecture/rendered/components.d2 docs/diagrams/architecture/
 
 Data flows are diagrammed in [`.ai-state/DESIGN.md` §5](../.ai-state/DESIGN.md#5-data-flow), which describes the **target** flow (release-sourced, refreshed in the background).
 
-To trace the **current** flow, start at `src/cv_mcp_server/server.py`: it resolves `DATA_DIR` (from `CV_DATA_DIR`, else by walking up to the directory containing `pyproject.toml`) and calls `ResumeStore.load(DATA_DIR)` **at module import time**, so the store is a module-level singleton every tool and resource imports directly. `main.py::_register_modules()` then walks `cv_mcp_server.tools` with `pkgutil` and imports `resources`, which is what activates the `@mcp.tool` and `@mcp.resource` decorators — adding a new tool module requires no edit to `main.py`.
+To trace the **current** flow, start at `src/cv_forge/mcp/server.py`: it resolves `DATA_DIR` (from `CV_DATA_DIR`, else by walking up to the directory containing `pyproject.toml`) and calls `ResumeStore.load(DATA_DIR)` **at module import time**, so the store is a module-level singleton every tool and resource imports directly. `main.py::_register_modules()` then walks `cv_forge.mcp.tools` with `pkgutil` and imports `resources`, which is what activates the `@mcp.tool` and `@mcp.resource` decorators — adding a new tool module requires no edit to `main.py`.
 
 ## 6. Dependencies
 

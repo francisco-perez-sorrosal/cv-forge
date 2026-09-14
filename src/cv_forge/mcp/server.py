@@ -5,8 +5,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from cv_mcp_server.store import ResumeStore
-
+from cv_forge.data.store import ResumeStore
 
 # Configure transport and statelessness
 trspt = "stdio"

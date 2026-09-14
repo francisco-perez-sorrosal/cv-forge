@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections import OrderedDict
 from types import SimpleNamespace
 
-from cv_mcp_server.renderers import (
+from cv_forge.models.resume import PatentStatus
+from cv_forge.models.tailoring import (
+    EntryEmphasis,
+    SectionDirective,
+    TailoringSpec,
+)
+from cv_forge.render.renderers import (
     _build_project_links,
     _build_skill_levels,
     _clean_whitespace,
@@ -23,13 +29,6 @@ from cv_mcp_server.renderers import (
     render_tailored_latex,
     render_work_entry,
 )
-from cv_mcp_server.models.resume import PatentStatus
-from cv_mcp_server.models.tailoring import (
-    EntryEmphasis,
-    SectionDirective,
-    TailoringSpec,
-)
-
 
 # --- render_markdown ---
 
@@ -311,7 +310,9 @@ class TestRenderTailoredLatex:
     def test_render_tailored_latex_entry_omission(self, minimal_store):
         spec = self._make_spec(
             entry_emphasis=[
-                EntryEmphasis(entry_id="work-acme-2023", weight=0, reason="Not relevant"),
+                EntryEmphasis(
+                    entry_id="work-acme-2023", weight=0, reason="Not relevant"
+                ),
             ],
         )
         output = render_tailored_latex(minimal_store, spec)

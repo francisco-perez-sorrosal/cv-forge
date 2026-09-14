@@ -5,19 +5,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cv_mcp_server.models.resume import EntryId
-from cv_mcp_server.models.semantics import (
-    EntryAnnotations,
+from cv_forge.models.resume import EntryId
+from cv_forge.models.semantics import (
     ProficiencyLevel,
     Provenance,
     Relationship,
     RelationshipType,
     RelevanceLevel,
-    SemanticOverlay,
     TopicAnnotation,
-    TopicTaxonomy,
 )
-
 
 # --- Enum values ---
 
@@ -28,16 +24,26 @@ class TestEnums:
 
     def test_relationship_type_values(self):
         expected = {
-            "relates-to", "derived-from", "resulted-in", "uses-skill",
-            "published-as", "patented-as", "presented-at",
-            "supervised-by", "continuation-of",
+            "relates-to",
+            "derived-from",
+            "resulted-in",
+            "uses-skill",
+            "published-as",
+            "patented-as",
+            "presented-at",
+            "supervised-by",
+            "continuation-of",
         }
         assert {r.value for r in RelationshipType} == expected
 
     def test_proficiency_level_values(self):
         expected = {
-            "novice", "beginner", "intermediate",
-            "advanced", "expert", "thought-leader",
+            "novice",
+            "beginner",
+            "intermediate",
+            "advanced",
+            "expert",
+            "thought-leader",
         }
         assert {p.value for p in ProficiencyLevel} == expected
 
@@ -52,26 +58,34 @@ class TestEnums:
 class TestTopicAnnotation:
     def test_confidence_zero_valid(self):
         ta = TopicAnnotation(
-            topic_id="ai", confidence=0.0, provenance=Provenance.human,
+            topic_id="ai",
+            confidence=0.0,
+            provenance=Provenance.human,
         )
         assert ta.confidence == 0.0
 
     def test_confidence_one_valid(self):
         ta = TopicAnnotation(
-            topic_id="ai", confidence=1.0, provenance=Provenance.human,
+            topic_id="ai",
+            confidence=1.0,
+            provenance=Provenance.human,
         )
         assert ta.confidence == 1.0
 
     def test_confidence_above_one_rejected(self):
         with pytest.raises(ValidationError):
             TopicAnnotation(
-                topic_id="ai", confidence=1.5, provenance=Provenance.human,
+                topic_id="ai",
+                confidence=1.5,
+                provenance=Provenance.human,
             )
 
     def test_confidence_negative_rejected(self):
         with pytest.raises(ValidationError):
             TopicAnnotation(
-                topic_id="ai", confidence=-0.1, provenance=Provenance.human,
+                topic_id="ai",
+                confidence=-0.1,
+                provenance=Provenance.human,
             )
 
     def test_camel_case_topic_id(self):

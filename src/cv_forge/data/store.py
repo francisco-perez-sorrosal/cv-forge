@@ -11,8 +11,8 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
-from cv_mcp_server.models.resume import Institution, Resume
-from cv_mcp_server.models.semantics import (
+from cv_forge.models.resume import Institution, Resume
+from cv_forge.models.semantics import (
     EntryAnnotations,
     Relationship,
     SemanticOverlay,

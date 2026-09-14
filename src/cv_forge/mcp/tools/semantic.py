@@ -1,20 +1,33 @@
 """Semantic query tools: topic-based lookups, relationships, skill profiles."""
 
-from cv_mcp_server.server import mcp, store
+from cv_forge.mcp.server import mcp, store
 
 
-@mcp.tool(description="Find resume entries annotated with a topic. Returns entry IDs with labels.")
+@mcp.tool(
+    description="Find resume entries annotated with a topic. Returns entry IDs with labels."
+)
 def query_by_topic(topic: str, include_subtopics: bool = True) -> str:
-    results = store.entries_by_topic(topic) if include_subtopics else [
-        {"id": eid, "entry": store.entry_by_id(eid)}
-        for eid in store.semantics.entries_by_topic(topic, include_descendants=False)
-    ]
+    results = (
+        store.entries_by_topic(topic)
+        if include_subtopics
+        else [
+            {"id": eid, "entry": store.entry_by_id(eid)}
+            for eid in store.semantics.entries_by_topic(
+                topic, include_descendants=False
+            )
+        ]
+    )
     if not results:
         return f"No entries annotated with topic '{topic}'."
     lines = []
     for r in results:
         entry = r.get("entry") or r.get("entry")
-        label = getattr(entry, "name", None) or getattr(entry, "title", None) or getattr(entry, "position", None) or str(r["id"])
+        label = (
+            getattr(entry, "name", None)
+            or getattr(entry, "title", None)
+            or getattr(entry, "position", None)
+            or str(r["id"])
+        )
         lines.append(f"- {r['id']}: {label}")
     return "\n".join(lines)
 
@@ -32,7 +45,9 @@ def get_relationships(entry_id: str) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(description="Get skill proficiency levels across the career, optionally filtered by topic.")
+@mcp.tool(
+    description="Get skill proficiency levels across the career, optionally filtered by topic."
+)
 def get_skill_profile(topic: str = "") -> str:
     profs = store.semantics.skill_proficiency
     if topic:
@@ -48,7 +63,9 @@ def get_skill_profile(topic: str = "") -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(description="Get full semantic context for an entry: topics, relationships, summaries, impact.")
+@mcp.tool(
+    description="Get full semantic context for an entry: topics, relationships, summaries, impact."
+)
 def get_entry_context(entry_id: str) -> str:
     entry = store.entry_by_id(entry_id)
     if entry is None:
@@ -64,7 +81,9 @@ def get_entry_context(entry_id: str) -> str:
                 topic = store.semantics.taxonomy.topic_by_id(t.topic_id)
                 label = topic.label if topic else t.topic_id
                 primary = " (primary)" if t.primary else ""
-                parts.append(f"- {label}{primary} — confidence: {t.confidence}, {t.rationale}")
+                parts.append(
+                    f"- {label}{primary} — confidence: {t.confidence}, {t.rationale}"
+                )
         if ann.impact:
             parts.append("\n### Impact")
             for i in ann.impact:

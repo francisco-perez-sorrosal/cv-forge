@@ -240,9 +240,9 @@ packages:
   - colorama ; platform_system == 'Windows'
   requires_python: '>=3.10'
 - pypi: .
-  name: cv-mcp-server
+  name: cv-forge
   version: 0.0.5
-  sha256: 9de564ece4ecd7e8f71f2a92606263b331629e987831d282adbbbc0344e71c59
+  sha256: 9878c583b4a1bcb61980f78be6d8f8cd700dd8c722e96e5dffab5def0401a45f
   requires_dist:
   - mcp[cli]>=1.9.2,<2
   - loguru>=0.7.3,<0.8

@@ -4,24 +4,25 @@ import base64
 import json
 from typing import Literal
 
+from loguru import logger
+from mcp.types import BlobResourceContents, EmbeddedResource
 from pydantic import AnyUrl, Field
 
-from mcp.types import BlobResourceContents, EmbeddedResource
-
-from loguru import logger
-from cv_mcp_server.server import mcp, store, CV_PATH
-from cv_mcp_server.renderers import (
-    render_markdown,
-    render_latex,
-    render_html,
-    render_tailored_latex,
-    render_typst,
-    render_tailored_typst,
-    render_sections,
+from cv_forge.mcp.server import CV_PATH, mcp, store
+from cv_forge.models import TailoringSpec
+from cv_forge.render.renderers import (
     get_section,
+    render_html,
+    render_latex,
+    render_markdown,
+    render_sections,
+    render_tailored_latex,
+    render_tailored_typst,
+    render_typst,
+)
+from cv_forge.render.renderers import (
     section_names as list_section_names,
 )
-from cv_mcp_server.models import TailoringSpec
 
 
 @mcp.tool()
@@ -38,7 +39,7 @@ def get_cv(
     ),
     enrich: bool = Field(
         default=True,
-        description="Include semantic enrichments (cross-references, skill levels)"
+        description="Include semantic enrichments (cross-references, skill levels)",
     ),
 ) -> str | list[EmbeddedResource]:
     """Data-layer tool: retrieves raw CV content in markdown, PDF, LaTeX, HTML, or Typst source.
@@ -56,14 +57,16 @@ def get_cv(
     if format == "pdf":
         logger.debug("Returning the CV as PDF binary...")
         pdf_data = CV_PATH.read_bytes() if CV_PATH.exists() else b""
-        return [EmbeddedResource(
-            type="resource",
-            resource=BlobResourceContents(
-                uri=AnyUrl("fps-cv://pdf"),
-                blob=base64.b64encode(pdf_data).decode("ascii"),
-                mimeType="application/pdf",
-            ),
-        )]
+        return [
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri=AnyUrl("fps-cv://pdf"),
+                    blob=base64.b64encode(pdf_data).decode("ascii"),
+                    mimeType="application/pdf",
+                ),
+            )
+        ]
     if format == "latex":
         logger.debug("Returning the CV as LaTeX source...")
         return render_latex(store)
@@ -101,10 +104,7 @@ def get_tailored_cv(
         spec = TailoringSpec.model_validate_json(tailoring_config)
     except Exception as exc:
         schema = json.dumps(TailoringSpec.model_json_schema(), indent=2)
-        return (
-            f"Invalid TailoringSpec: {exc}\n\n"
-            f"Expected JSON schema:\n{schema}"
-        )
+        return f"Invalid TailoringSpec: {exc}\n\nExpected JSON schema:\n{schema}"
     logger.debug(f"Rendering tailored CV for '{spec.job_title}' at '{spec.company}'...")
     if format == "typst":
         return render_tailored_typst(store, spec)
@@ -115,7 +115,7 @@ def get_tailored_cv(
 def get_link(
     name: str = Field(
         description="Network name (e.g. 'LinkedIn', 'GitHub', 'Google Scholar', 'Twitter', 'CV PDF'). Use list_links() to see all available."
-    )
+    ),
 ) -> str:
     """Return a profile or document link by network name."""
     name_lower = name.lower()
@@ -142,7 +142,7 @@ def get_cv_sections(
     ),
     enrich: bool = Field(
         default=True,
-        description="Include semantic enrichments (cross-references, skill levels)"
+        description="Include semantic enrichments (cross-references, skill levels)",
     ),
 ) -> str:
     """Retrieve one or more CV sections in a single call.
@@ -161,7 +161,9 @@ def get_cv_sections(
     output = "\n\n".join(results)
     if missing:
         available = ", ".join(list_section_names(store))
-        output += f"\n\nSections not found: {', '.join(missing)}. Available: {available}"
+        output += (
+            f"\n\nSections not found: {', '.join(missing)}. Available: {available}"
+        )
     return output
 
 

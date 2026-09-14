@@ -16,13 +16,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cv_mcp_server.renderers import (
+from cv_forge.data.store import ResumeStore
+from cv_forge.render.renderers import (
     render_html,
     render_latex,
     render_markdown,
     render_typst,
 )
-from cv_mcp_server.store import ResumeStore
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 

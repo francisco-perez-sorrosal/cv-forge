@@ -13,9 +13,9 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from cv_mcp_server.models.resume import InstitutionType, Resume, WorkEntry
-from cv_mcp_server.models.tailoring import TailoringSpec
-from cv_mcp_server.store import ResumeStore
+from cv_forge.data.store import ResumeStore
+from cv_forge.models.resume import InstitutionType, Resume, WorkEntry
+from cv_forge.models.tailoring import TailoringSpec
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 

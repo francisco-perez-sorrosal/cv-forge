@@ -4,21 +4,23 @@ import json
 
 from pydantic import BaseModel
 
-from cv_mcp_server.server import mcp, store, CV_PATH
-from cv_mcp_server.renderers import (
-    render_markdown,
-    render_latex,
-    render_html,
-    render_typst,
-    render_sections,
-    get_section,
-    section_names as list_section_names,
+from cv_forge.mcp.server import CV_PATH, mcp, store
+from cv_forge.models import Resume, SemanticOverlay
+from cv_forge.render.renderers import (
     TEMPLATES_DIR,
+    get_section,
+    render_html,
+    render_latex,
+    render_markdown,
+    render_sections,
+    render_typst,
 )
-from cv_mcp_server.models import Resume, SemanticOverlay
-
+from cv_forge.render.renderers import (
+    section_names as list_section_names,
+)
 
 # --- Rendered output (PDF, Markdown, LaTeX) ---
+
 
 @mcp.resource("fps-cv://pdf")
 def cv_pdf() -> bytes:
@@ -74,6 +76,7 @@ def cv_typst() -> str:
 
 # --- Structured data (JSON) ---
 
+
 @mcp.resource("fps-cv://resume")
 def resume_json() -> str:
     """Return the full resume data as JSON."""
@@ -109,10 +112,13 @@ def entry_semantics_json(entry_id: str) -> str:
 @mcp.resource("fps-cv://taxonomy")
 def taxonomy_json() -> str:
     """Return the topic taxonomy as JSON."""
-    return json.dumps(store.semantics.taxonomy.model_dump(by_alias=True), indent=2, default=str)
+    return json.dumps(
+        store.semantics.taxonomy.model_dump(by_alias=True), indent=2, default=str
+    )
 
 
 # --- Links ---
+
 
 @mcp.resource("fps-cv://links/{name}")
 def cv_link(name: str) -> str:
@@ -126,6 +132,7 @@ def cv_link(name: str) -> str:
 
 
 # --- Introspection (schemas, template catalog) ---
+
 
 @mcp.resource("fps-cv://schema/resume")
 def resume_schema() -> str:
@@ -242,7 +249,11 @@ def template_detail(format_id: str) -> str:
         source = (TEMPLATES_DIR / f["name"]).read_text()
         files.append({"name": f["name"], "role": f["role"], "source": source})
     return json.dumps(
-        {"id": format_id, "description": meta["description"],
-         "capabilities": meta["capabilities"], "files": files},
+        {
+            "id": format_id,
+            "description": meta["description"],
+            "capabilities": meta["capabilities"],
+            "files": files,
+        },
         indent=2,
     )

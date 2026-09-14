@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cv_mcp_server.utils import load_prompt
+from cv_forge.utils import load_prompt
 
 
 class TestLoadPrompt:
