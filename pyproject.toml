@@ -1,6 +1,6 @@
 [project]
 name = "cv-forge"
-version = "0.0.5"
+version = "1.0.0"
 description = "MCP server with structured YAML data layer, semantic overlay, and query tools for Francisco Perez-Sorrosal's CV"
 license = {text = "MIT"}
 authors = [
