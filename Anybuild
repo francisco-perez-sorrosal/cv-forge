@@ -1,0 +1,28 @@
+# Hand-authored, shaped after `anybuild`'s own generated output for a
+# Python/MCP project (verified pattern: ~/dev/wasmer-sdk-mcp's `Anybuild`,
+# read-only reference) -- this repo has no Wasmer app yet (the first deploy creates it), so
+# there has been no live `anybuild` run to generate this file from. Treat it
+# as a scaffold: the first real `anybuild` invocation against a created app
+# (the first real deploy) may rewrite it, and any drift should be reconciled by hand rather
+# than blindly overwritten, since `commands.start` mirrors `main.py`'s
+# `__main__` guard exactly.
+#
+# This file is yours to edit: add steps or override the serve below.
+
+load("//anybuild/tools:python.bzl", "python_build", "python_config", "python_serve")
+
+config = python_config(
+    schema = 1,
+    commands = {
+        "start": "python main.py",
+    },
+    python_framework = "mcp",
+    asgi_application = "main:app",
+    python_main_file = "main.py",
+    python_version = "3.13",
+    python_mcp_self_running = True,
+)
+
+build = python_build(config)
+
+python_serve(config, build, name = "fps-cv-mcp")

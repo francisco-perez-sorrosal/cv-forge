@@ -295,3 +295,7 @@ tmp/
 
 # Rendered CV outputs (generated artifacts — regenerate with `pixi run render-cv`)
 rendered-cv/
+
+# Deploy scaffolding: staged/generated at deploy or publish time, never committed
+baked/
+deploy/site/public/

@@ -1,0 +1,30 @@
+# Wasmer Edge app manifest for `fps-cv-mcp` -- the CV MCP server.
+#
+# Every name below is read verbatim by `src/cv_forge/data/bootstrap.py` and
+# `src/cv_forge/mcp/app.py` (the single source of truth for the env
+# contract -- see `.ai-state/SYSTEM_DEPLOYMENT.md` § Configuration). No
+# secrets live here: every asset this server fetches (GitHub Releases on
+# `cv`) is public.
+kind: wasmer.io/App.v0
+name: fps-cv-mcp
+owner: francisco-perez-sorrosal
+package: .
+
+env:
+  # Repository whose latest release supplies runtime data.
+  CV_RELEASE_REPO: francisco-perez-sorrosal/cv
+  # Refresh-loop period, in seconds (data/provider.py's `interval`).
+  CV_REFRESH_INTERVAL: "900"
+  # Where `scripts/deploy.sh` stages the baked fallback snapshot inside the
+  # deployed image (relative to the app's working directory).
+  CV_BAKED_DIR: baked
+  # Wasmer Edge terminates and validates the public hostname in front of
+  # this app; without this, the SDK's own DNS-rebinding-protection default
+  # (empty allowed_hosts/allowed_origins) 421s every request that arrives
+  # through Edge's proxy. See `mcp/app.py`'s `_transport_security()`.
+  CV_TRUST_HOST: "1"
+
+# PORT/FASTMCP_PORT: intentionally unset here -- Wasmer Edge assigns and
+# injects the bind port itself; `mcp/main.py`'s `_transport_config()` and
+# `main.py`'s `__main__` guard both already resolve `PORT` before
+# `FASTMCP_PORT` before a literal default, so no manifest entry is needed.

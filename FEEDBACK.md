@@ -32,6 +32,7 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-002 | wasmer (CLI) / installer | CLI / distribution | paper-cut | `wasmer self-update` post-install hint leaks a raw ANSI reset (`[0m`) when stdout is not a TTY |
 | F-003 | anybuild / docs | anybuild / docs | paper-cut | `anybuild --help` after install does not say the binary is not on PATH unless `~/.anybuild/env` is sourced; installer's `ANYBUILD_NO_PATH_UPDATE=1` is undocumented on docs.wasmer.io |
 | F-004 | WASIX index / anybuild | WASIX index / packaging | workaround | A greenfield `mcp` 2.2.0 server resolves `cryptography 50.0.1` + `cffi 2.1.1` (via `pyjwt[crypto]`); WASIX index tops out at `50.0.0` / `2.1.0`, and `cryptography` is imported at module load — three native ceilings (`pydantic-core`, `cryptography`, `cffi`) must now be hand-pinned |
+| F-005 | wasmerio/setup-wasmer | CI action | paper-cut | `action.yml`'s only documented input is `version` (default `''`); no README/marketplace text states the accepted format (plain SemVer? `v`-prefixed? range?) or what `''` resolves to -- confirmed empirically, not from docs |
 
 ---
 
@@ -41,15 +42,15 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 
 | sdk-mcp id | one-line | where it would surface here |
 |---|---|---|
-| F-009 | anybuild injects `FASTMCP_HOST`/`FASTMCP_PORT`, which `mcp` 2.x ignores | M1.20 `main.py` port resolution, M3.2 first deploy |
+| F-009 | anybuild injects `FASTMCP_HOST`/`FASTMCP_PORT`, which `mcp` 2.x ignores | Mitigated in code since M1.8 (`("PORT", "FASTMCP_PORT")` fallback in `mcp/main.py`/`main.py`); `app.yaml` deliberately sets neither, letting Edge's own injection and the code's fallback agree. Unverified live until M3.2. |
 | F-017 | `wasmer self-update` hangs then fails on `get.wasmer.io:443` | M1.0 toolchain |
 | F-018 | WASIX wheel index lags PyPI (`pydantic-core` ≤ 2.46.4) and anybuild pins the host resolve | M1.3 `pydantic` pin, M3.2 |
-| F-019 | anybuild shells out to `wasmer run --volume`, rejected by CLI < 7; no version check | M3.2 |
-| F-020 | CLI 6.1.0 upload dies on bare HTTP 500 from `registry.wasmer.io/gcs-upload` | M3.2 |
-| F-021 | anybuild ships the whole project dir, ignoring `.gitignore` | M1.20 `scripts/deploy.sh` staging |
+| F-019 | anybuild shells out to `wasmer run --volume`, rejected by CLI < 7; no version check | Mitigated at M1.20: `scripts/deploy.sh` asserts `wasmer --version >= 7.0.0` and aborts with a named reason before invoking anybuild. Unverified live until M3.2 (this machine already carries 7.4.1, so the assertion itself has not been exercised against a real 6.x failure here). |
+| F-020 | CLI 6.1.0 upload dies on bare HTTP 500 from `registry.wasmer.io/gcs-upload` | Same mitigation as F-019 (version assert prevents reaching this path); unverified live until M3.2 |
+| F-021 | anybuild ships the whole project dir, ignoring `.gitignore` | Mitigated at M1.20: `scripts/deploy.sh` stages `git ls-files` output (plus a `baked/` fallback snapshot) into a temp dir and never invokes `anybuild` from the repo root. Dry-run verified locally (152 tracked+baked files staged, zero untracked leakage); real `anybuild` invocation still pending M3.2. |
 | F-025 | `cross-requirements.txt` compiled with `--no-deps` silently drops extras | M1.3 (`mcp[cli]` extra dropped on purpose) |
 | F-038 | No local Edge runtime; every end-to-end test is a production deploy | M3.3 live poke |
-| F-039 | `setup-wasmer` input undocumented; example pins a CLI too old for anybuild | M1.28 `deploy-mcp.yml` |
+| F-039 | `setup-wasmer` input undocumented; example pins a CLI too old for anybuild | Materialized as this ledger's F-005 (M1.28 `publish.yml`, static-site job); `deploy-mcp.yml` itself is deferred to M1.28b pending M1.20 |
 | F-041 | `wasmer deploy` health-checks `/` and reports 404 for an app that only serves `/mcp` | M3.2 (we add `/healthz`; does the deploy check honour it?) |
 
 ---
@@ -145,3 +146,18 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> Python on Edge / anybuild pages (2026-09-13) — no mention of index lag, ceilings, or a constraints file.
 - **Evidence:** `pyproject.toml` (pins with comments), `pixi.lock` lines ~445/471 (pre-fix resolve `cffi 2.1.1`, `cryptography 50.0.1`); review report `.ai-work/cv-repo-split/LIGHT_REVIEW_M1.3.md` § F1 (local-only; the table above inlines its content).
 - **Related:** sdk-mcp F-018 (same class, `pydantic-core`; still reproduces on 2026-09-13), F-025 (extras dropped), F-026 (native trap → bare 500).
+
+### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
+- **Target repo:** wasmerio/setup-wasmer
+- **Area:** CI action
+- **Severity:** paper-cut
+- **Environment:** GitHub Actions, `wasmerio/setup-wasmer` tag `v3.1` (commit `24b15c95293d23f89c68bd40dac76338f773e924`, fetched 2026-09-13/14), used from `cv-forge`'s `.github/workflows/publish.yml` (M1.28) for the static-site deploy job.
+- **Steps to reproduce:**
+  1. `curl -s https://raw.githubusercontent.com/wasmerio/setup-wasmer/v3.1/action.yml`
+  2. Read the full file (13 lines): `inputs: version: { default: '' }` is the only documented surface.
+- **Expected:** the action's README or `action.yml` comment states what version strings are accepted (bare SemVer like `7.4.1`? a `v`-prefixed tag? a range like `7.x`?) and what installing with `version: ''` actually resolves to (latest release? a pinned default baked into the action's own release?).
+- **Actual:** no such text exists in `action.yml`; the only way to know `version: '7.4.1'` (bare, unprefixed) works is to try it. `SYSTEMS_PLAN.md`'s own requirement ("CLI ≥ 7 pin") could not be satisfied with confidence from docs alone — pinned `7.4.1` (the current `wasmerio/wasmer` `latest` release tag `v7.4.1` at fetch time) based on inference from the release list, not from `setup-wasmer` documentation.
+- **Proposed fix:** document the accepted `version` string format and the resolution behavior of `''` (empty/default) directly in `action.yml`'s `description:` field for that input, so `actionlint`/hover-tooling in editors surfaces it without a source read.
+- **Docs consulted:** `action.yml` itself (no separate usage doc found at the repo root at this tag).
+- **Evidence:** `.github/workflows/publish.yml` (this repo, M1.28) `Setup Wasmer CLI` step, pinned to the SHA above with `version: '7.4.1'`.
+- **Related:** sdk-mcp F-039 (same action, "input undocumented; example pins a CLI too old for anybuild") -- this entry adds the specific missing-documentation detail sdk-mcp's F-039 flagged but did not itemize.

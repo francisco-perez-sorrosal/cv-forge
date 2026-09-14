@@ -74,15 +74,25 @@ No container topology. `CV_DATA_DIR=./cv-data TRANSPORT=streamable-http pixi run
      architecture defines; the implementer completes defaults, sensitivity and per-environment
      differences once the code exists. -->
 
-### Environment Variables (architecturally defined; implementer completes)
+### Environment Variables (implementer-owned — built and verified against the code, M1.20)
 
-| Variable | Required | Default | Description | Sensitive |
-|----------|----------|---------|-------------|-----------|
-| `CV_DATA_DIR` | No | unset | When set, pins the data provider to a local directory: no release fetch, refresh state `pinned`. Used by development, tests and CI. | No |
-| `PORT` / `FASTMCP_PORT` | No | `8000` | Bind port, resolved in that order with a literal fallback. `anybuild` injects `FASTMCP_PORT`, which the `mcp` SDK does not read on its own. Host is always pinned to `0.0.0.0`. | No |
-| `TRANSPORT` | No | `stdio` | `stdio` or `streamable-http`. `sse` is rejected. | No |
-| `CV_RELEASE_REPO` | No | `francisco-perez-sorrosal/cv` | Repository whose latest release supplies the data. | No |
-| `CV_REFRESH_INTERVAL_SECONDS` | No | `900` | Refresh loop period. Raising it is the first lever if GitHub rate-limiting is ever observed. | No |
+**Correction (M1.20):** three statements below the previous draft made were wrong and are now fixed:
+the refresh-interval variable is `CV_REFRESH_INTERVAL` (no `_SECONDS` suffix), the port default is
+`10000` (`cv_forge.mcp.main.DEFAULT_PORT`), not `8000`, and `HOST` is a genuine environment variable
+read at startup (`os.environ.get("HOST", "0.0.0.0")`), not a value pinned in code — Edge relies on
+its default rather than an override.
+
+| Variable | Default | Where read | Edge value (`app.yaml`) |
+|----------|---------|------------|--------------------------|
+| `CV_DATA_DIR` | unset | `data/bootstrap.py::initial_snapshot_from_env`/`build_provider_from_env` — when set, pins the provider to a local directory (no release fetch, `refresh_state: pinned`). Used by development, tests and CI. | unset (Edge always runs the fetch+baked-fallback path) |
+| `CV_BAKED_DIR` | `<repo_root>/baked`, falling back to `<repo_root>/cv-data` if that path is not a directory | `data/bootstrap.py::baked_snapshot_dir` — the directory `scripts/deploy.sh` stages the fallback snapshot into before an image build | `baked` |
+| `CV_RELEASE_REPO` | `francisco-perez-sorrosal/cv` | `data/bootstrap.py::build_provider_from_env` — repository whose latest release supplies the data | `francisco-perez-sorrosal/cv` |
+| `CV_REFRESH_INTERVAL` | `900` (seconds) | `data/bootstrap.py::build_provider_from_env` — refresh-loop period; raising it is the first lever if GitHub rate-limiting is ever observed | `900` |
+| `TRANSPORT` | `stdio` | `mcp/main.py::_transport_config` — `stdio` or `streamable-http`; `sse` is rejected. Not consulted by the Edge entrypoint (`main.py` calls `create_app()` directly, always stateless streamable HTTP). | n/a (Edge path bypasses this dispatch) |
+| `HOST` | `0.0.0.0` | `mcp/main.py::_transport_config`, `main.py`'s `__main__` guard — a real env var, not a code-pinned constant | unset (default already correct) |
+| `PORT` / `FASTMCP_PORT` | `10000` (`cv_forge.mcp.main.DEFAULT_PORT`), `PORT` checked first | `mcp/main.py::_transport_config`, `main.py`'s `__main__` guard, `cli/main.py::_cmd_serve` — `anybuild` injects `FASTMCP_PORT`, which the `mcp` SDK itself does not read; this project's own code resolves it explicitly | unset (Wasmer Edge assigns and injects the bind port itself) |
+| `CV_TRUST_HOST` | unset (DNS-rebinding protection **on**) | `mcp/app.py::_transport_security` — `"1"` disables the SDK's Host/Origin allowlist entirely. Required on Edge: Wasmer's proxy terminates the public hostname in front of this app, so the SDK's own localhost-only defaults would 421 every request. | `"1"` |
+| `CV_ALLOWED_ORIGINS` | unset | `mcp/app.py::_local_allowed_origins` — comma-separated list extending the local dev allowlist (e.g. a non-default dev frontend port). Irrelevant once `CV_TRUST_HOST=1` disables the check. | unset |
 
 ### Secrets Management
 
@@ -116,6 +126,8 @@ The two non-negotiable properties of this flow, both derived from documented `an
 1. **Never run `anybuild` from the repository root.** It ignores `.gitignore`, excluding only `.venv`, `.git` and `__pycache__`, so it will ship local scratch directories into the image — and a large image fails the registry upload with a bare HTTP 500. Stage `git ls-files` output into a temp directory first.
 2. **Assert `wasmer --version >= 7.0` before building.** On 6.1.0, `anybuild` 0.28.x shells out to a rejected `--volume` flag and its package upload fails with a bare HTTP 500. Also normalise `WASMER_BIN` to an absolute path: `anybuild` runs from the staging directory, so a relative binary path resolves there and fails with a bare "No such file or directory".
 
+**Status (M1.20): artifacts present, not yet deployed.** `main.py`, `Anybuild`, `app.yaml`, `deploy/site/app.yaml` and `scripts/deploy.sh` exist in the tree and are verified by static check (`bash -n`, a `--dry-run` staging run, and `import main` with `CV_DATA_DIR` unset) — no Wasmer app has been created yet (that is M3.1) and none of these have been exercised against the real platform. `deploy/site/app.yaml` in particular is a best-effort scaffold (no local Wasmer emulator exists to verify a static-site manifest against) and should be reconciled against whatever `wasmer app create fps-cv --template=static-website` actually produces at M3.1. This status line is superseded once M3 lands a real deploy.
+
 ### Rollback
 
 `wasmer app rollback` to the previous app version. Because the cutover keeps render.com live and the consumer plugin's endpoint is a single JSON field, a failed migration is reverted by repointing that field — not by redeploying anything.
@@ -134,7 +146,7 @@ The two non-negotiable properties of this flow, both derived from documented `an
 | Data refresh | New release contains YAML that fails validation | Low | Parsed into a new snapshot *before* the swap, so the bad release is rejected and the previous snapshot stays live. Counted as a refresh failure. | Degraded (freshness only) |
 | PDF artifact | Release PDF asset missing or unfetchable | Low | `ArtifactUnavailable` returned as a structured message naming the asset and its direct download URL. Every other format is still rendered in-process. | Partial (one tool surface) |
 | MCP app | WASIX instance traps on a native extension | Low (no such dependency today) | Manifests as a bare HTTP 500 with **no traceback and no log line** — the documented WASIX signature. Diagnosis requires a staged instrumented probe. Prevention: check `python-registry.wasix.org` for a wheel before adding any native dependency. | Full |
-| MCP app | Bound to loopback instead of `0.0.0.0` | Medium if unguarded | Instance unreachable behind the Edge proxy, and it also trips the SDK's DNS-rebinding allowlist. Prevented by pinning `BIND_HOST` in code rather than trusting an env default. | Full |
+| MCP app | Bound to loopback instead of `0.0.0.0` | Medium if unguarded | Instance unreachable behind the Edge proxy, and it also trips the SDK's DNS-rebinding allowlist. Prevented by `HOST` defaulting to `0.0.0.0` in code and by `CV_TRUST_HOST=1` on Edge (§4). | Full |
 | MCP app | Port read from the wrong variable | Medium if unguarded | `anybuild` injects `FASTMCP_PORT`, which the SDK ignores, and the SDK's own default is `127.0.0.1:8000`. Prevented by resolving `("PORT", "FASTMCP_PORT")` explicitly. | Full |
 | Build | `pydantic` pin raised above the WASIX ceiling | Medium over time | Cross-install fails at build time (loud, not silent). CI queries the WASIX index for the max `pydantic-core` and fails when the pin must move. The ceiling binds today: PyPI's current `pydantic` is `2.13.5`, and `<2.13.5` is required. | Build blocked |
 | Build | Untracked files staged into the image | High if unmitigated | Bare HTTP 500 on registry upload. Prevented by the `git ls-files` staging step. | Deploy blocked |
@@ -175,7 +187,7 @@ The two non-negotiable properties of this flow, both derived from documented `an
 
 Wasmer Edge manages instance count; there are no resource limits to configure and no vertical/horizontal decision to make. The architecturally relevant consequence is that instances are **ephemeral and horizontally multiplied with no session affinity**, which is why the transport is stateless (the 2026-07-28 MCP spec revision makes that the default) and why every cache is per-instance.
 
-The one scaling-shaped constraint is GitHub's 60-requests-per-hour unauthenticated ceiling **per source IP**. At a 15-minute refresh interval each instance costs 4 requests/hour, leaving headroom for roughly 15 concurrent instances sharing an egress IP. If throttling is ever observed, lengthen `CV_REFRESH_INTERVAL_SECONDS` — an environment change, not a code change.
+The one scaling-shaped constraint is GitHub's 60-requests-per-hour unauthenticated ceiling **per source IP**. At a 15-minute refresh interval each instance costs 4 requests/hour, leaving headroom for roughly 15 concurrent instances sharing an egress IP. If throttling is ever observed, lengthen `CV_REFRESH_INTERVAL` — an environment change, not a code change.
 
 ## 9. Decisions
 
@@ -213,6 +225,6 @@ Deployment decisions are recorded as ADRs in `.ai-state/decisions/`. This sectio
 | Bare HTTP 500, no traceback, no logs | Whether any dependency ships a native extension without a WASIX wheel | Replace with a pure-Python equivalent; verify against `python-registry.wasix.org` before adding |
 | Deploy fails on registry upload with HTTP 500 | Staging directory size; `wasmer --version` | Confirm the deploy staged only `git ls-files`; upgrade the `wasmer` CLI to ≥ 7.0 |
 | Endpoint unreachable after a successful deploy | Bind host and port resolution | Host must be `0.0.0.0`; port must come from `PORT` or `FASTMCP_PORT` |
-| `/healthz` reports `stale` with rising `consecutive_failures` | `last_error` in the response body | If rate-limited, raise `CV_REFRESH_INTERVAL_SECONDS`; if the release is malformed, fix and republish — the server is still serving the last good snapshot |
+| `/healthz` reports `stale` with rising `consecutive_failures` | `last_error` in the response body | If rate-limited, raise `CV_REFRESH_INTERVAL`; if the release is malformed, fix and republish — the server is still serving the last good snapshot |
 | `get_cv(format="pdf")` returns unavailable | Whether the latest release carries the PDF asset | Re-run the publish workflow; the error message carries the direct download URL to check |
 | Published page shows an old CV | Whether the publish run's site-deploy step passed | Re-dispatch `publish.yml` with the current tag; the run fails if the live page does not answer with that tag |
