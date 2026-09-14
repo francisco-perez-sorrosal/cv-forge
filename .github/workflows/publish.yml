@@ -87,8 +87,12 @@ jobs:
       - name: Install LaTeX packages
         if: contains(inputs.formats, 'pdf') || inputs.formats == 'all'
         run: |
+          # moderncv from current TeX Live requires fontawesome6 (MacTeX 2024's
+          # older moderncv used fontawesome5 -- keep both so either resolves);
+          # enumitem/multibib/lmodern/amsfonts are the templates' own imports.
           tlmgr install moderncv geometry babel babel-english xcolor \
-            fontawesome5 multirow arydshln collection-fontsrecommended \
+            fontawesome6 fontawesome5 multirow arydshln collection-fontsrecommended \
+            enumitem multibib lmodern amsfonts hyperref etoolbox \
             biblatex biber latexmk collection-latex
 
       - name: Render the CV
