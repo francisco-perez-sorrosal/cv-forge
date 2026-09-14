@@ -51,7 +51,10 @@ jobs:
       - name: Setup Wasmer CLI
         uses: wasmerio/setup-wasmer@24b15c95293d23f89c68bd40dac76338f773e924 # v3.1
         with:
-          version: '7.4.1'
+          # Must carry the `v`: the action passes it straight to the installer,
+          # which downloads the GitHub release tag verbatim and, on a 404, still
+          # exits 0 with nothing installed.
+          version: 'v7.4.1'
 
       # Evidence for the ledger and a fast failure: where the action put the
       # CLI and whether the step PATH sees it (deploy.sh also falls back to

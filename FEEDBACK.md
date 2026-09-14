@@ -218,7 +218,7 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 ### F-008 — `setup-wasmer` v3.1: Node 20 deprecation annotation, and the installed CLI is not on PATH inside a `pixi run` step
 - **Target repo:** wasmerio/setup-wasmer
 - **Area:** CI action
-- **Severity:** paper-cut (first CI deploy of `cv-forge` failed at preflight; fixed on our side by resolving the CLI through `$WASMER_DIR/bin`)
+- **Severity:** blocker → workaround (two CI deploys failed; root cause found on the second with a diagnostic step: `version: '7.4.1'` makes the wrapped installer 404 on the release download, and the action then reports success with nothing installed — `version: 'v7.4.1'` works)
 - **Environment:** GitHub Actions `ubuntu-latest`, `wasmerio/setup-wasmer@24b15c95…` (v3.1) with `version: '7.4.1'`, `prefix-dev/setup-pixi` + `pixi run -e dev ./scripts/deploy.sh`, 2026-09-14, run `34862858731` in `francisco-perez-sorrosal/cv-forge`.
 - **Steps to reproduce:**
   1. A job with `setup-pixi` → `setup-wasmer` → a step running `pixi run -e dev <script that does command -v wasmer>`.
@@ -232,8 +232,16 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
     WASMER_CACHE_DIR: /home/runner/.wasmer/cache
   deploy.sh: preflight failed -- wasmer CLI not found on PATH (need >= 7.0.0: …)
   ```
-  The action exports `WASMER_DIR` but the step's PATH (as seen from `pixi run`) did not contain `$WASMER_DIR/bin`. Our script now falls back to `$WASMER_DIR/bin/wasmer` and `~/.wasmer/bin/wasmer`; the follow-up run's "Show wasmer CLI location" step records the exact state.
-- **Proposed fix:** publish a Node-24 build of the action; append `$WASMER_DIR/bin` to `GITHUB_PATH` (or document that consumers must); document the `version:` input format (see sdk-mcp F-039).
+  A second run with a diagnostic step (`command -v wasmer; ls $WASMER_DIR/bin`) showed `~/.wasmer/bin` does not exist at all, and the action's own step log explains why:
+  ```
+  downloading: wasmer-linux-amd64
+  Installing provided version: 7.4.1
+  error: File download failed with code 404
+  Executed installer. (Exit code 0)
+  Updated environment variables.
+  ```
+  `version: '7.4.1'` is passed verbatim to the installer, which builds a GitHub release URL from it; the release tags are `v7.4.1`, so the download 404s — and the action reports success anyway. `version: 'v7.4.1'` installs correctly. So the PATH observation is a symptom, not the cause; the cause is a silently ignored installer failure plus an undocumented `version` format.
+- **Proposed fix:** make the action fail when the installer fails (propagate the installer's exit code, or check that `$WASMER_DIR/bin/wasmer --version` works before "Updated environment variables"); accept both `7.4.1` and `v7.4.1` (normalise the prefix) and document the format in `action.yml`'s input description; publish a Node-24 build; append `$WASMER_DIR/bin` to `GITHUB_PATH` explicitly (see sdk-mcp F-039).
 - **Docs consulted:** the action's README (no `version` format, no PATH note), 2026-09-14.
 - **Evidence:** run `34862858731`, job `deploy`, step "Deploy fps-cv-mcp" (log quoted above); `scripts/deploy.sh` resolution block.
 - **Related:** sdk-mcp F-039.

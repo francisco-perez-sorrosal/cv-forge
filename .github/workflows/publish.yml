@@ -95,11 +95,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # pixi runs the task from the manifest's directory (cv-forge/), so
+          # every path handed to the CLI must be absolute.
           pixi run -e dev --manifest-path cv-forge/pyproject.toml \
             cv-forge render -f "${{ inputs.formats }}" \
-            --data-dir "cv-src/${{ inputs.data-path }}" \
+            --data-dir "$GITHUB_WORKSPACE/cv-src/${{ inputs.data-path }}" \
             --release-tag "${{ inputs.ref }}" \
-            -o dist --json > dist/render.json
+            -o "$GITHUB_WORKSPACE/dist" --json > dist/render.json
           cat dist/render.json
 
       - name: Copy the raw YAML data assets
@@ -185,7 +187,9 @@ jobs:
         if: inputs.deploy-site
         uses: wasmerio/setup-wasmer@24b15c95293d23f89c68bd40dac76338f773e924 # v3.1
         with:
-          version: '7.4.1'
+          # Must carry the `v` (release tag); without it the installer 404s
+          # and the action still exits 0 with nothing installed.
+          version: 'v7.4.1'
 
       - name: Stage the static site
         if: inputs.deploy-site
