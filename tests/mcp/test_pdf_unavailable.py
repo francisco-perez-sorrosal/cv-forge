@@ -205,14 +205,20 @@ class TestPdfResourceUnavailable:
         provider = _provider_with_pdf_unavailable(reason="no_release")
         app = create_app(provider)
 
-        async def _read():
+        async def _read() -> MCPError:
+            # Catch inside the session: the SDK's ClientSession.__aexit__ hands a
+            # propagating exception to an anyio TaskGroup, which re-raises it
+            # wrapped in a BaseExceptionGroup that pytest.raises cannot unwrap.
             async with _mcp_session(app) as session:
-                await session.read_resource("fps-cv://pdf")
+                try:
+                    await session.read_resource("fps-cv://pdf")
+                except MCPError as exc:
+                    return exc
+            raise AssertionError("fps-cv://pdf did not raise an MCPError")
 
-        with pytest.raises(MCPError) as excinfo:
-            asyncio.run(_read())
+        error = asyncio.run(_read())
 
-        assert DOWNLOAD_URL in excinfo.value.message
+        assert DOWNLOAD_URL in error.message
 
 
 class TestToolAnnotationsAndStatelessness:
