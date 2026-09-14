@@ -1,6 +1,6 @@
-"""Tests for load_local_dir() -- REQ-14 local/CI data override.
+"""Tests for load_local_dir() -- local/CI data override.
 
-Derived from SYSTEMS_PLAN.md REQ-14 ("When CV_DATA_DIR points at a directory
+Derived from the local-data-override requirement ("When CV_DATA_DIR points at a directory
 containing resume.yaml ... the system loads from that directory, performs no
 network fetch, and reports pinned as its refresh state") and the M1.4 file list
 (`data/local.py` -> `load_local_dir(path) -> CvDataSnapshot`). Written before

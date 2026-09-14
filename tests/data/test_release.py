@@ -2,7 +2,7 @@
 
 Derived from SYSTEMS_PLAN.md § Cross-Repo Contract item 3 (`release.json` schema v1:
 additive evolution, unknown top-level keys ignored, required keys `schema_version`,
-`tag`, `published_at`, `assets`) and REQ-12 (`ArtifactUnavailable`'s closed `reason`
+`tag`, `published_at`, `assets`) and (`ArtifactUnavailable`'s closed `reason`
 enum: `http_error | timeout | no_release | checksum_mismatch | too_large`). Written
 before src/cv_forge/data/release.py exists -- confirm RED (ImportError) first.
 """
