@@ -462,7 +462,21 @@ packages:
 - pypi: .
   name: cv-forge
   version: 0.0.5
-  sha256: 66ddeebcac28453d67c7defe691fad57445a9b75b88807ea30f086fb9116f87c
+  sha256: 8dfa0416f22bc4e98040c7feff65ec1d2fb750cf5878c207816d29f753ffa4b4
+  requires_dist:
+  - mcp>=2.2,<3
+  - loguru>=0.7.3,<0.8
+  - pyyaml>=6.0,<7.0
+  - jinja2>=3.1,<4
+  - pydantic>=2.12,<2.13.5
+  - cryptography>=43,<50.0.1
+  - cffi>=2.1,<2.1.1
+  requires_python: '>=3.13'
+  editable: true
+- pypi: .
+  name: cv-forge
+  version: 0.0.5
+  sha256: cf9d5a5d2f968c560307fa6ae1f2414ed4093fb614db3c568e840254b2321870
   requires_dist:
   - mcp>=2.2,<3
   - loguru>=0.7.3,<0.8
@@ -754,8 +768,6 @@ packages:
   - __glibc >=2.17,<3.0.a0
   - libgcc >=15
   - libstdcxx >=15
-  arch: x86_64
-  platform: linux
   license: Python-2.0
   purls: []
   size: 9711017
@@ -1088,8 +1100,6 @@ packages:
   - readline >=8.3,<9.0a0
   - tk >=8.6.13,<8.7.0a0
   - tzdata
-  arch: x86_64
-  platform: linux
   license: Python-2.0
   purls: []
   size: 24369771

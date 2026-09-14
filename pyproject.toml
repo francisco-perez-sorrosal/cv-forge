@@ -67,6 +67,7 @@ dev = { features = ["dev"], solve-group = "default" }
 [tool.pixi.tasks]
 mcps="python src/cv_forge/mcp/main.py"
 start="python src/cv_forge/mcp/main.py"
+cv-forge="cv-forge"
 test = "pytest tests/ -v"
 test-unit = "pytest tests/ -v -m 'not integration'"
 test-integration = "pytest tests/ -v -m integration"
@@ -79,6 +80,7 @@ packages = ["src/cv_forge"]
 
 [project.scripts]
 cv-mcp-server = "cv_forge.mcp.main:main"
+cv-forge = "cv_forge.cli.main:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
