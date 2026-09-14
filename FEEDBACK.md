@@ -32,6 +32,8 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-002 | wasmer (CLI) / installer | CLI / distribution | paper-cut | `wasmer self-update` post-install hint leaks a raw ANSI reset (`[0m`) when stdout is not a TTY |
 | F-003 | anybuild / docs | anybuild / docs | paper-cut | `anybuild --help` after install does not say the binary is not on PATH unless `~/.anybuild/env` is sourced; installer's `ANYBUILD_NO_PATH_UPDATE=1` is undocumented on docs.wasmer.io |
 | F-004 | WASIX index / anybuild | WASIX index / packaging | workaround | A greenfield `mcp` 2.2.0 server resolves `cryptography 50.0.1` + `cffi 2.1.1` (via `pyjwt[crypto]`); WASIX index tops out at `50.0.0` / `2.1.0`, and `cryptography` is imported at module load — three native ceilings (`pydantic-core`, `cryptography`, `cffi`) must now be hand-pinned |
+| F-005 | anybuild | anybuild / Python-MCP provider | paper-cut | The MCP provider appends `mcp[cli]` to the cross-install command unconditionally, re-adding the `[cli]` extra (typer, rich, …) a project deliberately dropped to keep the Edge image small |
+| F-006 | WASIX index + Wasmer Edge runtime | WASIX index / Edge runtime / packaging | blocker | `cffi 2.1.0+wasix.{1,2,3}` ships `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) but the Edge `python/python 3.13.17` runtime is a wasi-threads build that only loads `…-wasi-threads.so` — so `cryptography` (required by every `mcp` 2.x at import) dies on Edge with `ModuleNotFoundError: _cffi_backend`; the same image imports fine under `wasmer run` locally, which is a non-threads build |
 | F-005 | wasmerio/setup-wasmer | CI action | paper-cut | `action.yml`'s only documented input is `version` (default `''`); no README/marketplace text states the accepted format (plain SemVer? `v`-prefixed? range?) or what `''` resolves to -- confirmed empirically, not from docs |
 
 ---
@@ -147,6 +149,50 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> Python on Edge / anybuild pages (2026-09-13) — no mention of index lag, ceilings, or a constraints file.
 - **Evidence:** `pyproject.toml` (pins with comments), `pixi.lock` lines ~445/471 (pre-fix resolve `cffi 2.1.1`, `cryptography 50.0.1`); review report `.ai-work/cv-repo-split/LIGHT_REVIEW_M1.3.md` § F1 (local-only; the table above inlines its content).
 - **Related:** sdk-mcp F-018 (same class, `pydantic-core`; still reproduces on 2026-09-13), F-025 (extras dropped), F-026 (native trap → bare 500).
+
+### F-005 — anybuild's Python-MCP provider unconditionally appends `mcp[cli]` to the cross-install
+- **Target repo:** wasmerio/anybuild
+- **Area:** anybuild / Python-MCP provider
+- **Severity:** paper-cut
+- **Environment:** macOS arm64 (Darwin 25.3), anybuild 0.28.4, `wasmer` 7.4.1, Python 3.13, 2026-09-14. Project declares `mcp>=2.2,<3` (no extras) on purpose.
+- **Steps to reproduce:**
+  1. `Anybuild` with `python_framework = "mcp"`.
+  2. `anybuild auto --platform=wasmer …` (or a local `--runner=wasmer` build) and read the install step it prints.
+- **Expected:** the provider installs what `pyproject.toml` declares (`cross-requirements.txt` already carries `mcp==2.2.0`).
+- **Actual:** the provider adds the extra itself:
+  ```
+  $ uvx pip install -r cross-requirements.txt mcp[cli] --target /opt/venv/lib/python3.13/site-packages --platform wasix_wasm32 --only-binary=:all: --python-version=3.13 --compile
+  ```
+  so `typer`, `rich`, `shellingham`, `pydantic-settings`, `python-dotenv`, `httpx-sse`, … land in the Edge image even though the server never imports them. Combined with sdk-mcp F-025 (extras are *dropped* when compiling `cross-requirements.txt`), the provider both strips extras the project asked for and adds one it did not.
+- **Proposed fix:** honour the project's own `mcp` requirement string; if the provider needs the CLI extra for its own tooling, install it into a build-time-only environment, not `/opt/venv`. At minimum, document the injection on the Python-MCP provider page.
+- **Docs consulted:** <https://docs.wasmer.io/> anybuild Python/MCP pages (2026-09-14) — no mention of the injected extra.
+- **Evidence:** deploy log of the first `fps-cv-mcp` deploy (local-only, quoted above); `pyproject.toml` `dependencies` block.
+- **Related:** sdk-mcp F-025.
+
+### F-006 — `cffi`'s WASIX wheel targets the non-threads ABI; the Edge runtime is a wasi-threads build, so `cryptography` (and every `mcp` 2.x server) dies at import
+- **Target repo:** WASIX package index (`python-registry.wasix.org`, owning repo to confirm) — the `cffi` wheel; and Wasmer Edge runtime / docs — the local-vs-Edge interpreter mismatch is undocumented
+- **Area:** WASIX index / Edge runtime / packaging
+- **Severity:** blocker (first deploy of a stock `mcp` 2.2.0 server returns HTTP 500 on every request)
+- **Environment:** macOS arm64 (Darwin 25.3), anybuild 0.28.4, `wasmer` 7.4.1, project pins `mcp>=2.2,<3`, `cryptography>=43,<50.0.1`, `cffi>=2.1,<2.1.1`; image manifest generated by anybuild: `"python/python" = "=3.13.17"` (reports CPython 3.13.15); deployed app version `dav_RLmILtmuJDl5`, region `us-hillsboro`, 2026-09-14.
+- **Steps to reproduce:**
+  1. Any project whose dependency closure includes `cryptography` (here: `mcp` 2.2.0 → `pyjwt[crypto]` → `cryptography 50.0.0+wasix.2` → `cffi 2.1.0+wasix.3`; `mcp/server/request_state.py:22` imports `cryptography` at module load, so it cannot be avoided).
+  2. `anybuild auto --platform=wasmer …` — build and upload succeed; `wasmer deploy` reports "deployed successfully" then "fails with a non-success status code of 500".
+  3. `curl -i https://fps-cv-mcp.wasmer.app/healthz` → `HTTP/2 500`, `x-edge-request-outcome: workload_failure`, HTML error page.
+  4. `wasmer app logs fps-cv-mcp` →
+     ```
+     File "/opt/venv/lib/python3.13/site-packages/cryptography/exceptions.py", line 9, in <module>
+       from cryptography.hazmat.bindings._rust import exceptions as rust_exceptions
+     ModuleNotFoundError: No module named '_cffi_backend'
+     ```
+  5. Inspect the image anybuild built (`.anybuild/local/build/opt/venv/lib/python3.13/site-packages/`): the module **is** there, as `_cffi_backend.cpython-313-wasm32-wasi.so`. Every other native wheel in the closure uses a different suffix: `pydantic_core/_pydantic_core.cpython-313-wasm32-wasi-threads.so`, `yaml/_yaml.cpython-313-wasm32-wasi-threads.so`, `cryptography/hazmat/bindings/_rust.abi3.so`.
+  6. Under the *local* runtime — `wasmer run python/python@3.13.17 --mapdir /site:<that site-packages> -- -c "import _cffi_backend; import pydantic_core"` — `_cffi_backend` imports and `pydantic_core` fails (`No module named 'pydantic_core._pydantic_core'`); `sysconfig.get_config_var('EXT_SUFFIX')` is `.cpython-313-wasm32-wasi.so` and `EXTENSION_SUFFIXES` is `['.cpython-313-wasm32-wasi.so', '.abi3.so', '.so']`. On Edge the observed behaviour is the mirror image (`pydantic_core` loads — the sibling project runs on it — and `_cffi_backend` does not).
+- **Expected:** one ABI: every wheel on the index built with the suffix the Edge interpreter actually probes, and the `python/python` package behaving the same under `wasmer run` and on Edge (or the difference documented, with `EXT_SUFFIX` stated per target).
+- **Actual:** the index mixes ABIs (`cffi` = non-threads, `pydantic-core`/`pyyaml` = threads) and the same package version resolves to a non-threads build locally and a threads build on Edge, so a closure that imports cleanly under `wasmer run` traps on Edge with no hint that an extension suffix is the cause. All three published `cffi` builds (`+wasix.1/.2/.3`, cp313 and cp314) carry the non-threads suffix.
+- **Proposed fix:** rebuild `cffi` for the wasi-threads ABI (or publish both suffixes in one wheel, as the interpreter's `EXTENSION_SUFFIXES` list allows); make `wasmer run python/python` and Edge use the same build, or print the target ABI in `anybuild`'s build summary and have `anybuild` cross-check every `.so` suffix in the venv against it before upload — a one-line check that would have turned a bare production 500 into a build-time error. Document `EXT_SUFFIX` per runtime on docs.wasmer.io.
+- **Docs consulted:** <https://docs.wasmer.io/> Python on Edge / anybuild pages (2026-09-14) — nothing on threads vs non-threads interpreter builds or extension suffixes.
+- **Evidence:** app version `dav_RLmILtmuJDl5`; `wasmer app logs fps-cv-mcp`; local anybuild build tree (local-only) with the file list above; this repo's `scripts/deploy.sh` (vendor shim) and `main.py` (`vendor/wasix` on `sys.path`).
+- **Related:** sdk-mcp F-026 (native extension trap → bare 500, no traceback), F-018 (index lag). Different root cause from both.
+- **Workaround in this repo:** `scripts/deploy.sh` cross-installs the pinned `cffi` wheel into `vendor/wasix/` inside the staged tree and adds a copy named `_cffi_backend.cpython-313-wasm32-wasi-threads.so`; `main.py` prepends `vendor/wasix` to `sys.path`. Status: *under test — outcome recorded below once the redeploy has been poked.*
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer

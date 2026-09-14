@@ -118,8 +118,33 @@ else
     cp -R cv-data "$BAKED_DIR"
 fi
 
+# Vendor a threads-ABI copy of cffi's extension module. The WASIX index ships
+# `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) while the
+# Edge interpreter is a wasi-threads build that only looks for
+# `...-wasi-threads.so` -- so `cryptography` (pulled in by the MCP SDK and
+# imported at module load) dies with "No module named '_cffi_backend'" on
+# Edge. `main.py` puts vendor/wasix first on sys.path. See FEEDBACK.md:
+# cffi wheel built for the wrong WASIX ABI. Remove once the index ships a
+# threads-suffixed wheel.
+CFFI_VERSION="$(grep -A1 '^  name: cffi$' pixi.lock | grep 'version:' | head -1 | awk '{print $2}')"
+VENDOR_DIR="$STAGE/vendor/wasix"
+mkdir -p "$VENDOR_DIR"
+if command -v uvx >/dev/null 2>&1; then
+    UVX="uvx"
+else
+    UVX="pixi run -e dev uvx"
+fi
+$UVX pip install "cffi==${CFFI_VERSION}" --target "$VENDOR_DIR" \
+    --platform wasix_wasm32 --only-binary=:all: --python-version=3.13 \
+    --extra-index-url https://python-registry.wasix.org/simple --no-deps -q \
+    || fail "could not cross-install cffi==${CFFI_VERSION} for the vendor shim"
+CFFI_SO="$(find "$VENDOR_DIR" -maxdepth 1 -name '_cffi_backend.cpython-313-wasm32-wasi.so' | head -1)"
+[ -n "$CFFI_SO" ] || fail "cffi wheel did not contain _cffi_backend.cpython-313-wasm32-wasi.so"
+cp "$CFFI_SO" "$VENDOR_DIR/_cffi_backend.cpython-313-wasm32-wasi-threads.so"
+echo "deploy.sh: vendored cffi ${CFFI_VERSION} backend with a wasi-threads suffix into vendor/wasix/"
+
 STAGED_COUNT="$(find "$STAGE" -type f | wc -l | tr -d ' ')"
-echo "deploy.sh: staged $STAGED_COUNT files (git-tracked + baked/) in $STAGE"
+echo "deploy.sh: staged $STAGED_COUNT files (git-tracked + baked/ + vendor/) in $STAGE"
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "--- staged files ---"

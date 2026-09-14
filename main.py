@@ -30,9 +30,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_SRC = str(Path(__file__).resolve().parent / "src")
+_ROOT = Path(__file__).resolve().parent
+_SRC = str(_ROOT / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
+
+# Deploy-time shim (see scripts/deploy.sh): a wasi-threads-suffixed copy of
+# cffi's extension module that the WASIX index does not ship. Only exists in
+# a staged Edge deploy; a plain checkout has no vendor/ directory.
+_VENDOR = _ROOT / "vendor" / "wasix"
+if _VENDOR.is_dir() and str(_VENDOR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR))
 
 from cv_forge.data.bootstrap import build_provider_from_env  # noqa: E402
 from cv_forge.mcp.app import create_app  # noqa: E402
