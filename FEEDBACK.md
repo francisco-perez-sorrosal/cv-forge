@@ -192,7 +192,26 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> Python on Edge / anybuild pages (2026-09-14) — nothing on threads vs non-threads interpreter builds or extension suffixes.
 - **Evidence:** app version `dav_RLmILtmuJDl5`; `wasmer app logs fps-cv-mcp`; local anybuild build tree (local-only) with the file list above; this repo's `scripts/deploy.sh` (vendor shim) and `main.py` (`vendor/wasix` on `sys.path`).
 - **Related:** sdk-mcp F-026 (native extension trap → bare 500, no traceback), F-018 (index lag). Different root cause from both.
-- **Workaround in this repo:** `scripts/deploy.sh` cross-installs the pinned `cffi` wheel into `vendor/wasix/` inside the staged tree and adds a copy named `_cffi_backend.cpython-313-wasm32-wasi-threads.so`; `main.py` prepends `vendor/wasix` to `sys.path`. Status: *under test — outcome recorded below once the redeploy has been poked.*
+- **Workaround in this repo:** `scripts/deploy.sh` cross-installs the pinned `cffi` wheel into `vendor/wasix/` inside the staged tree and adds a copy named `_cffi_backend.cpython-313-wasm32-wasi-threads.so`; `main.py` prepends `vendor/wasix` to `sys.path`. Status: **works** — the redeploy (2026-09-14, second app version) answers `GET /healthz` with HTTP 200 and serves `tools/list` over stateless streamable HTTP; the non-threads-built `.so` loads and runs under the threads interpreter once the file name matches, which confirms the suffix probe, not the ABI, was the failure. The shim is still a workaround: it ships a second copy of the module in `/app` and depends on the index's file name staying stable.
+
+### F-007 — `wasmer deploy` health-checks `/` and reports a false failure for an app that serves `/healthz` and `/mcp`
+- **Target repo:** wasmerio/wasmer (CLI) / Wasmer Edge
+- **Area:** Edge deploy / CLI
+- **Severity:** paper-cut (reproduces sdk-mcp F-041 on a second project)
+- **Environment:** `wasmer` 7.4.1, anybuild 0.28.4, app `fps-cv-mcp` (`app.yaml` in this repo), 2026-09-14.
+- **Steps to reproduce:** `scripts/deploy.sh fps-cv-mcp` (wraps `anybuild --platform=wasmer` → `wasmer deploy`).
+- **Expected:** the post-deploy wait either probes a documented, configurable path (e.g. `healthz` from `app.yaml`) or reports the probed path and status without calling the deploy a failure.
+- **Actual:**
+  ```
+  ✔ App fps-cv-mcp (francisco-perez-sorrosal) deployed successfully.
+  Waiting for new deployment to become available...
+  The app version was deployed correctly, but fails with a non-success status code of 404 Not Found
+  ```
+  while, seconds later, `curl -i https://fps-cv-mcp.wasmer.app/healthz` is `HTTP/2 200` with the expected JSON body. The first (genuinely broken) deploy of this app produced the same sentence with `500` — the message shape does not distinguish "your app has no `/`" from "your app crashed", which cost real diagnosis time (see F-006).
+- **Proposed fix:** a `health_check_path` (or reuse of a `healthz`-style convention) in `app.yaml`; and print the probed URL in the message.
+- **Docs consulted:** <https://docs.wasmer.io/> Edge app configuration (2026-09-14) — no health-check path setting found.
+- **Evidence:** deploy logs of both app versions (local-only; sentences quoted verbatim above).
+- **Related:** sdk-mcp F-041 — still reproduces on CLI 7.4.1.
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer

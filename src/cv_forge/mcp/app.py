@@ -83,7 +83,12 @@ def _resolve_cv_forge_version() -> str:
     try:
         return importlib.metadata.version("cv-forge")
     except importlib.metadata.PackageNotFoundError:
-        return "unknown"
+        # Edge images stage the source tree without installing the
+        # distribution, so dist-info is absent; the package constant is the
+        # same value release.sh stamps.
+        from cv_forge import __version__
+
+        return __version__
 
 
 _CV_FORGE_VERSION = _resolve_cv_forge_version()
