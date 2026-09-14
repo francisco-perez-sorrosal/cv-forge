@@ -79,7 +79,6 @@ allow-direct-references = true
 packages = ["src/cv_forge"]
 
 [project.scripts]
-cv-mcp-server = "cv_forge.mcp.main:main"
 cv-forge = "cv_forge.cli.main:main"
 
 [tool.pytest.ini_options]

@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from cv_forge.cli.main import main
 
 # --- Fixtures ---
@@ -232,6 +233,116 @@ class TestR1Determinism:
         assert (out_a / "FranciscoPerezSorrosal_CV.html").read_bytes() == (
             out_b / "FranciscoPerezSorrosal_CV.html"
         ).read_bytes()
+
+    def test_two_renders_with_the_same_release_tag_are_still_byte_identical(
+        self, cv_data_dir, tmp_path
+    ):
+        out_a = tmp_path / "run-a"
+        out_b = tmp_path / "run-b"
+        for out_dir in (out_a, out_b):
+            code = main(
+                [
+                    "render",
+                    "-f",
+                    "html",
+                    "--data-dir",
+                    str(cv_data_dir),
+                    "--release-tag",
+                    "2026.09.14",
+                    "-o",
+                    str(out_dir),
+                ]
+            )
+            assert code == 0
+        assert (out_a / "FranciscoPerezSorrosal_CV.html").read_bytes() == (
+            out_b / "FranciscoPerezSorrosal_CV.html"
+        ).read_bytes()
+
+
+# --- --release-tag: HTML embeds it, other formats ignore it ---
+
+
+class TestReleaseTag:
+    def test_html_embeds_the_release_tag_meta_and_footer_line_when_given(
+        self, cv_data_dir, tmp_path
+    ):
+        out_dir = tmp_path / "out"
+        code = main(
+            [
+                "render",
+                "-f",
+                "html",
+                "--data-dir",
+                str(cv_data_dir),
+                "--release-tag",
+                "2026.09.14",
+                "-o",
+                str(out_dir),
+            ]
+        )
+        assert code == 0
+        html = (out_dir / "FranciscoPerezSorrosal_CV.html").read_text()
+        assert '<meta name="cv-release-tag" content="2026.09.14">' in html
+        assert "Release 2026.09.14" in html
+
+    def test_html_has_no_release_tag_meta_when_not_given(self, cv_data_dir, tmp_path):
+        out_dir = tmp_path / "out"
+        code = main(
+            [
+                "render",
+                "-f",
+                "html",
+                "--data-dir",
+                str(cv_data_dir),
+                "-o",
+                str(out_dir),
+            ]
+        )
+        assert code == 0
+        html = (out_dir / "FranciscoPerezSorrosal_CV.html").read_text()
+        assert "cv-release-tag" not in html
+
+    def test_json_envelope_surfaces_the_release_tag(
+        self, cv_data_dir, tmp_path, capsys
+    ):
+        code = main(
+            [
+                "render",
+                "-f",
+                "html",
+                "--data-dir",
+                str(cv_data_dir),
+                "--release-tag",
+                "2026.09.14",
+                "-o",
+                str(tmp_path),
+                "--json",
+            ]
+        )
+        assert code == 0
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["release_tag"] == "2026.09.14"
+
+    def test_non_html_formats_accept_but_ignore_the_release_tag(
+        self, cv_data_dir, tmp_path
+    ):
+        out_dir = tmp_path / "out"
+        code = main(
+            [
+                "render",
+                "-f",
+                "md",
+                "--data-dir",
+                str(cv_data_dir),
+                "--release-tag",
+                "2026.09.14",
+                "-o",
+                str(out_dir),
+            ]
+        )
+        assert code == 0
+        md = (out_dir / "FranciscoPerezSorrosal_CV.md").read_text()
+        assert "2026.09.14" not in md
 
 
 # --- stdout discipline without --json ---

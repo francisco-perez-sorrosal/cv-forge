@@ -9,7 +9,7 @@ Stateless streamable HTTP is built explicitly here (`stateless=True` by
 default) because the Edge entrypoint (`main:app`, a plain ASGI callable) never
 calls `MCPServer.run()` -- if statelessness lived only on `run()`'s keyword
 arguments, Edge and a local `cv-forge serve` invocation would silently
-diverge on session semantics. `cv_forge.mcp.main.main()` threads the same
+diverge on session semantics. `cli.main._cmd_serve` threads the same
 `stateless` value through both the ASGI-app path and the stdio path for the
 same reason.
 

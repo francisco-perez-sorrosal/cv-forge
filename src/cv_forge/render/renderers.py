@@ -509,12 +509,21 @@ def _make_employer_name_filter(resume: Resume):
 _CV_PDF_NETWORK = "CV PDF"
 
 
-def render_html(store: ResumeStore, *, enrich: bool = True) -> str:
-    """Render a complete Resume as self-contained interactive HTML."""
+def render_html(
+    store: ResumeStore, *, enrich: bool = True, release_tag: str | None = None
+) -> str:
+    """Render a complete Resume as self-contained interactive HTML.
+
+    `release_tag` is an input, never a clock -- passing the same tag (or
+    `None`) twice must reproduce identical bytes (R1). It surfaces as a
+    `<meta name="cv-release-tag">` and an unobtrusive footer line when set;
+    omitted entirely otherwise. No other renderer accepts it.
+    """
     env = _create_html_env(store)
     template = env.get_template("cv.html.j2")
     context = _template_context(store, enrich)
     context["pdf_link"] = _extract_pdf_link(store.resume)
+    context["release_tag"] = release_tag
     return template.render(**context)
 
 

@@ -462,7 +462,7 @@ packages:
 - pypi: .
   name: cv-forge
   version: 0.0.5
-  sha256: 3e17a57316674ad127b585b6d5216cbe2d7344188bc9ce74758ec654e846e35a
+  sha256: 02fe50b28242ef7cb27671e19b6b6aa6e24222f452cedda7562c3789005c6ddf
   requires_dist:
   - mcp>=2.2,<3
   - loguru>=0.7.3,<0.8

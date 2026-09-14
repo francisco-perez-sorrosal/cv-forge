@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ resume.personal_info.name }} — CV</title>
+  {% if release_tag %}
+  <meta name="cv-release-tag" content="{{ release_tag }}">
+  {% endif %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link id="font-stylesheet"
@@ -432,6 +435,9 @@
     <a class="download-btn" href="{{ pdf_link }}" target="_blank" rel="noopener">Download Full CV</a>
     {% endif %}
     <p>Generated from structured CV data</p>
+    {% if release_tag %}
+    <p>Release {{ release_tag }}</p>
+    {% endif %}
   </div>
 </footer>
 

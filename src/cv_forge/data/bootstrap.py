@@ -1,24 +1,25 @@
 """Environment-driven `CvDataProvider` construction, shared by every driver.
 
-`mcp/main.py` (stdio and streamable-http) and the `cv-forge serve` CLI
-subcommand both need to answer the same question -- "which snapshot, which
-fetcher, what refresh interval" -- from the same handful of environment
-variables. Lifting that precedence rule here once, as public API, keeps it
-from drifting into two silently-different copies behind private functions in
-`mcp/main.py`: `data/` owns paths and the network, `mcp/` and `cli/` are the
-two drivers that consume this module rather than re-implementing it.
+The repo-root Edge entrypoint (`main.py`) and the `cv-forge serve` CLI
+subcommand (`cli/main.py::_cmd_serve`, stdio and streamable-http both) need
+to answer the same question -- "which snapshot, which fetcher, what refresh
+interval" -- from the same handful of environment variables. Lifting that
+precedence rule here once, as public API, keeps it from drifting into two
+silently-different copies behind private functions in each driver: `data/`
+owns paths and the network, `mcp/` (the ASGI app itself) and `cli/` are the
+drivers that consume this module rather than re-implementing it.
 
 Raises `LocalDataDirError`, `InvalidRefreshIntervalError` or
 `InvalidCvDataError` on a misconfigured environment; this module never
 prints or exits -- that is each driver's own concern (a CLI's exit code
 table is not this module's to pick). `describe_startup_error()` maps any of
 the three onto the ready-to-render `INTERFACE_DESIGN.md §1.6` message once,
-here, so `mcp/main.py` and `cli/main.py::_cmd_serve` render identical text
-for identical failures instead of each re-deriving it from the raw
-exception -- in particular, `pydantic.ValidationError` is a `ValueError`
-subclass, so a caller that still did `except ValueError` around this
-module's return value would misreport a malformed `resume.yaml` as a bad
-`CV_REFRESH_INTERVAL`; the two are now distinct exception types.
+here, so every driver renders identical text for identical failures instead
+of each re-deriving it from the raw exception -- in particular,
+`pydantic.ValidationError` is a `ValueError` subclass, so a caller that
+still did `except ValueError` around this module's return value would
+misreport a malformed `resume.yaml` as a bad `CV_REFRESH_INTERVAL`; the two
+are now distinct exception types.
 """
 
 from __future__ import annotations
@@ -36,6 +37,12 @@ from cv_forge.data.release import DEFAULT_CV_REPO, GitHubReleaseFetcher
 from cv_forge.data.snapshot import BakedSnapshot, CvDataSnapshot
 
 DEFAULT_REFRESH_INTERVAL_SECONDS = 900.0
+
+# Fallback bind port for the `streamable-http`/`http` transport when neither
+# `PORT` nor `FASTMCP_PORT` is set -- shared by `cli/main.py::_cmd_serve` and
+# the repo-root Edge entrypoint's `__main__` guard so both agree on the same
+# default without importing from each other.
+DEFAULT_PORT = 10000
 
 
 class InvalidRefreshIntervalError(ValueError):

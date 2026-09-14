@@ -40,7 +40,7 @@ import httpx2
 import yaml
 
 from cv_forge.cli import main as cli_main
-from cv_forge.cli.main import build_serve_app
+from cv_forge.cli.main import _cmd_serve, build_serve_app
 from cv_forge.data.provider import Pinned
 
 RESUME_YAML = yaml.dump(
@@ -155,3 +155,47 @@ class TestHealthzReportsPinned:
         body = response.json()
         assert body["status"] == "ok"
         assert body["refresh_state"] == "pinned"
+
+
+class TestStartupErrorsDistinguishDataFromEnv:
+    """`pydantic.ValidationError` is a `ValueError` subclass, so a malformed
+    `resume.yaml` and an unparseable `CV_REFRESH_INTERVAL` used to collide
+    under one `except ValueError` and both reported the interval message
+    (`LIGHT_REVIEW_M1.8-rev.md` N1). These pin the fix through `_cmd_serve`
+    -- the sole surviving driver of `data.bootstrap.describe_startup_error`
+    now that the standalone `mcp/main.py` entrypoint is retired -- each
+    failure gets its own three-part (`INTERFACE_DESIGN.md §1.6`) message and
+    its own `§1.3` exit code."""
+
+    def test_malformed_resume_yaml_at_startup_reports_the_data_file_not_the_interval(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        (tmp_path / "resume.yaml").write_text("personal_info: 12345\n")
+        monkeypatch.setenv("CV_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("CV_REFRESH_INTERVAL", raising=False)
+
+        exit_code = _cmd_serve(
+            argparse.Namespace(data_dir=None, transport="stdio", port=None)
+        )
+
+        assert exit_code == 3  # INTERFACE_DESIGN.md §1.3: data invalid
+        stderr = capsys.readouterr().err
+        assert str(tmp_path) in stderr
+        assert "personal_info" in stderr
+        assert "CV_REFRESH_INTERVAL" not in stderr
+
+    def test_invalid_refresh_interval_still_reports_the_env_message_not_the_data_one(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        (tmp_path / "resume.yaml").write_bytes(RESUME_YAML)
+        monkeypatch.setenv("CV_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("CV_REFRESH_INTERVAL", "not-a-number")
+
+        exit_code = _cmd_serve(
+            argparse.Namespace(data_dir=None, transport="stdio", port=None)
+        )
+
+        assert exit_code == 1
+        stderr = capsys.readouterr().err
+        assert "invalid CV_REFRESH_INTERVAL" in stderr
+        assert "is not valid" not in stderr

@@ -5,12 +5,10 @@ DIST_SKILL  = $(DIST_DIR)/skill
 
 SKILLS = cv-analyst cv-tailoring
 
-CLAUDE_DESKTOP_CONFIG = $(HOME)/Library/Application Support/Claude/claude_desktop_config.json
-MCP_SERVER_KEY        = fps_cv_mcp
-REMOTE_MCP_CONFIG     = config/cv_mcp.json
+MCP_SERVER_KEY = fps_cv_mcp
 
 .PHONY: build-skill \
-        install-claude-desktop install-claude-code install-skills \
+        install-claude-code install-skills \
         clean
 
 # --- Build targets ---
@@ -23,25 +21,6 @@ build-skill:
 	done
 
 # --- Install targets ---
-
-# Install for Claude Desktop (remote connector only — MCPB packaging retired)
-install-claude-desktop: build-skill
-	@if [ ! -f "$(CLAUDE_DESKTOP_CONFIG)" ]; then \
-		echo "Error: Claude Desktop config not found at $(CLAUDE_DESKTOP_CONFIG)"; \
-		exit 1; \
-	fi
-	@if jq -e '.mcpServers.$(MCP_SERVER_KEY)' "$(CLAUDE_DESKTOP_CONFIG)" > /dev/null 2>&1; then \
-		echo "MCP server: $(MCP_SERVER_KEY) already present in Claude Desktop config — skipping"; \
-	else \
-		jq --argjson cfg "$$(cat $(REMOTE_MCP_CONFIG))" \
-			'.mcpServers.$(MCP_SERVER_KEY) = $$cfg' "$(CLAUDE_DESKTOP_CONFIG)" > "$(CLAUDE_DESKTOP_CONFIG).tmp" \
-			&& mv "$(CLAUDE_DESKTOP_CONFIG).tmp" "$(CLAUDE_DESKTOP_CONFIG)"; \
-		echo "MCP server: $(MCP_SERVER_KEY) injected into Claude Desktop config"; \
-	fi
-	@echo ""
-	@echo "Skills built. Install manually in Claude Desktop:"
-	@echo "  Skills: Open Settings > Features > Add Skill, upload each zip from $(DIST_SKILL)/"
-	@echo ""
 
 # Install Claude Code plugin
 # Usage: make install-claude-code                      # local (default): local plugin + local MCP

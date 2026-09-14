@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    from cv_forge.mcp.main import DEFAULT_PORT  # noqa: E402
+    from cv_forge.data.bootstrap import DEFAULT_PORT  # noqa: E402
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", os.environ.get("FASTMCP_PORT", DEFAULT_PORT)))

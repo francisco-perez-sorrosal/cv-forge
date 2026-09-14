@@ -182,6 +182,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Output directory (default: {DEFAULT_RENDER_OUT}), or '-' for stdout",
     )
     render_parser.add_argument("--data-dir", default=None, metavar="DIR")
+    render_parser.add_argument(
+        "--release-tag",
+        default=None,
+        metavar="TAG",
+        help="Embed a release tag in HTML output (meta tag + footer line); "
+        "other formats accept but ignore it",
+    )
     render_parser.set_defaults(func=_cmd_render)
 
     validate_parser = subparsers.add_parser(
@@ -309,16 +316,24 @@ def _cmd_render(args: argparse.Namespace) -> int:
     store = ResumeStore(snapshot.resume, snapshot.semantics)
 
     if args.out == "-":
-        return _render_to_stdout(formats, store, json_requested=args.json)
+        return _render_to_stdout(
+            formats, store, json_requested=args.json, release_tag=args.release_tag
+        )
 
     out_dir = Path(args.out) if args.out else DEFAULT_RENDER_OUT
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs = [
-        _output_entry(fmt, _render_format(fmt, store, out_dir)) for fmt in formats
+        _output_entry(fmt, _render_format(fmt, store, out_dir, args.release_tag))
+        for fmt in formats
     ]
 
     if args.json:
-        _print_json_envelope("render", _origin_kind(snapshot.origin), outputs)
+        _print_json_envelope(
+            "render",
+            _origin_kind(snapshot.origin),
+            outputs,
+            release_tag=args.release_tag,
+        )
     else:
         _print_output_paths(outputs)
     return 0
@@ -334,7 +349,11 @@ def _resolve_formats(raw: str) -> tuple[str, ...] | None:
 
 
 def _render_to_stdout(
-    formats: tuple[str, ...], store: ResumeStore, *, json_requested: bool
+    formats: tuple[str, ...],
+    store: ResumeStore,
+    *,
+    json_requested: bool,
+    release_tag: str | None = None,
 ) -> int:
     if json_requested or len(formats) != 1 or formats[0] == "pdf":
         print(
@@ -342,15 +361,27 @@ def _render_to_stdout(
             file=sys.stderr,
         )
         return 2
-    sys.stdout.write(_FORMATS[formats[0]].renderer(store))
+    sys.stdout.write(_render_content(formats[0], store, release_tag))
     return 0
 
 
-def _render_format(fmt: str, store: ResumeStore, out_dir: Path) -> Path:
+def _render_content(fmt: str, store: ResumeStore, release_tag: str | None) -> str:
+    """Only `html` consumes `release_tag`; every other format's renderer
+    signature has no such parameter, so this is the one place that decides
+    whether it applies -- not a fork the format registry needs to know
+    about."""
+    if fmt == "html":
+        return render_html(store, release_tag=release_tag)
+    return _FORMATS[fmt].renderer(store)
+
+
+def _render_format(
+    fmt: str, store: ResumeStore, out_dir: Path, release_tag: str | None = None
+) -> Path:
     spec = _FORMATS[fmt]
     if spec.compiled:
         return _render_and_compile_pdf(store, out_dir)
-    content = spec.renderer(store).encode("utf-8")
+    content = _render_content(fmt, store, release_tag).encode("utf-8")
     path = out_dir / f"{ASSET_STEM}.{spec.extension}"
     path.write_bytes(content)
     return path
@@ -411,6 +442,7 @@ def _print_json_envelope(
     *,
     status: str = "ok",
     findings: list[dict[str, object]] | None = None,
+    release_tag: str | None = None,
 ) -> None:
     envelope = {
         "command": command,
@@ -419,6 +451,7 @@ def _print_json_envelope(
         "data_origin": data_origin,
         "outputs": outputs,
         "findings": findings or [],
+        "release_tag": release_tag,
     }
     print(json.dumps(envelope))
 
@@ -665,9 +698,10 @@ def _print_fetch_unavailable_error(unavailable: ArtifactUnavailable) -> None:
 def _print_startup_error(error: StartupError) -> None:
     """Render `data.bootstrap.describe_startup_error`'s output in this CLI's
     own `cv-forge:`/two-space-indent style (`_print_no_data_dir_error` and
-    friends above) -- the message *content* is shared with `mcp/main.py` via
-    `describe_startup_error`; only the surrounding print formatting differs
-    per entry point."""
+    friends above). `describe_startup_error` itself stays public API in
+    `data/bootstrap.py`, not inlined here, so a future driver can render the
+    same (what/why/how/exit_code) mapping with its own print style without
+    re-deriving it from the raw exception."""
     print(f"cv-forge: {error.what}.", file=sys.stderr)
     print(f"  {error.why}", file=sys.stderr)
     print(f"  To fix:  {error.how}", file=sys.stderr)
@@ -707,7 +741,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     if args.transport == "http":
         import uvicorn
 
-        from cv_forge.mcp.main import DEFAULT_PORT
+        from cv_forge.data.bootstrap import DEFAULT_PORT
 
         host = os.environ.get("HOST", "0.0.0.0")
         port = args.port or int(

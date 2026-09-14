@@ -98,6 +98,7 @@ jobs:
           pixi run -e dev --manifest-path cv-forge/pyproject.toml \
             cv-forge render -f "${{ inputs.formats }}" \
             --data-dir "cv-src/${{ inputs.data-path }}" \
+            --release-tag "${{ inputs.ref }}" \
             -o dist --json > dist/render.json
           cat dist/render.json
 
@@ -215,9 +216,9 @@ jobs:
           set -euo pipefail
           url="https://${SITE_APP}.wasmer.app/"
           body="$(curl -fsS --retry 5 --retry-delay 5 "$url")"
-          if ! grep -qF "$TAG" <<<"$body"; then
-            echo "::error::$url did not contain the release tag $TAG -- publish considered failed"
-            echo "::notice::The HTML renderer does not yet embed the release tag anywhere in the page (verified 2026-09-13); this check will not pass until that template change lands (tracked for M1.31/M2, see LEARNINGS.md)."
+          needle="cv-release-tag\" content=\"${TAG}\""
+          if ! grep -qF "$needle" <<<"$body"; then
+            echo "::error::$url did not contain the release tag meta ($needle) -- publish considered failed"
             exit 1
           fi
           echo "OK: $url is live and contains tag $TAG"
