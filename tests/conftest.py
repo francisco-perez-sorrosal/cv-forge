@@ -298,9 +298,8 @@ def minimal_semantics(minimal_taxonomy) -> SemanticOverlay:
 
 
 @pytest.fixture
-def minimal_store(minimal_resume, minimal_semantics, tmp_path) -> ResumeStore:
-    semantics_path = tmp_path / "resume-semantics.yaml"
-    return ResumeStore(minimal_resume, minimal_semantics, semantics_path)
+def minimal_store(minimal_resume, minimal_semantics) -> ResumeStore:
+    return ResumeStore(minimal_resume, minimal_semantics)
 
 
 # --- Tier 2: Real data fixtures (session-scoped) ---

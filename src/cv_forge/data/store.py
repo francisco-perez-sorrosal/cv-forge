@@ -1,72 +1,42 @@
-"""ResumeStore: unified access to structured CV data and semantic overlay.
+"""ResumeStore: read-only query access to a parsed resume and semantic overlay.
 
-Loads resume.yaml (required) and resume-semantics.yaml (optional),
-validates cross-references, and provides query methods for MCP tools.
+Constructed from already-parsed models -- loading lives at the boundary
+(`cv_forge.data.local`, and eventually `cv_forge.cli` for semantics writes),
+not here. A store whose data came from a GitHub release has no meaningful
+`save()`; removing the persistence path removes that illegal state rather
+than documenting it.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
 from loguru import logger
 
+from cv_forge.data.local import load_local_dir
 from cv_forge.models.resume import Institution, Resume
-from cv_forge.models.semantics import (
-    EntryAnnotations,
-    Relationship,
-    SemanticOverlay,
-)
+from cv_forge.models.semantics import Relationship, SemanticOverlay
 
 
 class ResumeStore:
-    """Loads resume + semantic overlay, validates cross-references,
-    and provides query methods for MCP tools.
+    """Read-only query access over a resume and its semantic overlay."""
 
-    The resume data is read-only after load.
-    The semantic overlay can be updated (LLM annotations) and persisted.
-    """
-
-    def __init__(
-        self,
-        resume: Resume,
-        semantics: SemanticOverlay,
-        semantics_path: Path,
-    ) -> None:
+    def __init__(self, resume: Resume, semantics: SemanticOverlay) -> None:
         self._resume = resume
         self._semantics = semantics
-        self._semantics_path = semantics_path
         self._entries_by_id: dict[str, object] = self._build_entry_index()
+        self._validate_cross_references()
 
     @classmethod
     def load(cls, data_dir: Path) -> ResumeStore:
-        """Load and validate resume + semantics from a directory."""
-        resume_path = data_dir / "resume.yaml"
-        semantics_path = data_dir / "resume-semantics.yaml"
+        """Construct a store from a local data directory.
 
-        with open(resume_path, encoding="utf-8") as f:
-            resume = Resume.model_validate(yaml.safe_load(f))
-        logger.info(
-            f"Loaded resume: {len(resume.work)} work entries, "
-            f"{len(resume.publications)} publications"
-        )
-
-        if semantics_path.exists():
-            with open(semantics_path, encoding="utf-8") as f:
-                raw = yaml.safe_load(f)
-            semantics = (
-                SemanticOverlay.model_validate(raw) if raw else SemanticOverlay()
-            )
-            logger.info(
-                f"Loaded semantic overlay: {len(semantics.annotations)} annotated entries"
-            )
-        else:
-            semantics = SemanticOverlay()
-            logger.info("No semantic overlay found; starting with empty annotations")
-
-        store = cls(resume, semantics, semantics_path)
-        store._validate_cross_references()
-        return store
+        Transitional convenience for callers not yet wired through
+        `CvDataProvider` -- delegates entirely to `load_local_dir`; no file
+        I/O happens in this class.
+        """
+        snapshot = load_local_dir(data_dir)
+        return cls(snapshot.resume, snapshot.semantics)
 
     @property
     def resume(self) -> Resume:
@@ -156,26 +126,6 @@ class ResumeStore:
         results.sort(key=lambda r: relevance_order.get(r["relevance"], 99))
         return results
 
-    # --- Semantic write methods ---
-
-    def annotate_entry(self, entry_id: str, annotations: EntryAnnotations) -> None:
-        """Add or replace annotations for an entry. Persists to disk."""
-        if entry_id not in self._entries_by_id:
-            raise ValueError(f"Entry ID '{entry_id}' not found in resume")
-        self._semantics.annotations = [
-            a for a in self._semantics.annotations if a.entry_id != entry_id
-        ]
-        self._semantics.annotations.append(annotations)
-        self._persist_semantics()
-
-    def add_relationship(self, relationship: Relationship) -> None:
-        """Add a cross-entry relationship. Persists to disk."""
-        for eid in [relationship.source_id, relationship.target_id]:
-            if eid not in self._entries_by_id:
-                raise ValueError(f"Entry ID '{eid}' not found in resume")
-        self._semantics.relationships.append(relationship)
-        self._persist_semantics()
-
     # --- Internal ---
 
     def _build_entry_index(self) -> dict[str, object]:
@@ -211,12 +161,3 @@ class ResumeStore:
                 f"Semantic overlay references {len(dangling)} unknown entry IDs: "
                 f"{sorted(dangling)[:10]}{'...' if len(dangling) > 10 else ''}"
             )
-
-    def _persist_semantics(self) -> None:
-        """Write semantic overlay back to YAML."""
-        data = self._semantics.model_dump(by_alias=True, exclude_defaults=True)
-        with open(self._semantics_path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                data, f, default_flow_style=False, allow_unicode=True, sort_keys=False
-            )
-        logger.info("Semantic overlay persisted to disk")

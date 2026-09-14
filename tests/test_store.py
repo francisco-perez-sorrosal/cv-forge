@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 import yaml
 
 from cv_forge.data.store import ResumeStore
 from cv_forge.models.resume import EntryId, Institution, Project, WorkEntry
-from cv_forge.models.semantics import (
-    EntryAnnotations,
-    Provenance,
-    Relationship,
-    RelationshipType,
-    SemanticOverlay,
-    TopicAnnotation,
-)
+from cv_forge.models.semantics import EntryAnnotations, SemanticOverlay
 
 # --- Construction and properties ---
 
@@ -161,105 +153,6 @@ class TestAudienceRelevantEntries:
         assert minimal_store.audience_relevant_entries("unknown") == []
 
 
-# --- annotate_entry ---
-
-
-class TestAnnotateEntry:
-    def test_add_annotation(self, minimal_store):
-        ann = EntryAnnotations(
-            entry_id=EntryId("pub-nlp-2019"),
-            topics=[
-                TopicAnnotation(
-                    topic_id="ai.ml",
-                    confidence=0.95,
-                    provenance=Provenance.llm,
-                ),
-            ],
-        )
-        minimal_store.annotate_entry("pub-nlp-2019", ann)
-        found = minimal_store.semantics.annotations_for("pub-nlp-2019")
-        assert found is not None
-        assert found.topics[0].confidence == 0.95
-
-    def test_replace_existing(self, minimal_store):
-        original = minimal_store.semantics.annotations_for("work-acme-2023")
-        assert original is not None
-        new_ann = EntryAnnotations(
-            entry_id=EntryId("work-acme-2023"),
-            topics=[
-                TopicAnnotation(
-                    topic_id="systems",
-                    confidence=0.7,
-                    provenance=Provenance.human,
-                ),
-            ],
-        )
-        minimal_store.annotate_entry("work-acme-2023", new_ann)
-        updated = minimal_store.semantics.annotations_for("work-acme-2023")
-        assert len(updated.topics) == 1
-        assert updated.topics[0].topic_id == "systems"
-
-    def test_unknown_id_raises(self, minimal_store):
-        ann = EntryAnnotations(entry_id=EntryId("nonexistent"))
-        with pytest.raises(ValueError, match="not found"):
-            minimal_store.annotate_entry("nonexistent", ann)
-
-    def test_persists_to_disk(self, minimal_store, tmp_path):
-        store = ResumeStore(
-            minimal_store.resume,
-            SemanticOverlay(),
-            tmp_path / "sem.yaml",
-        )
-        ann = EntryAnnotations(
-            entry_id=EntryId("pub-nlp-2019"),
-            topics=[
-                TopicAnnotation(
-                    topic_id="ai",
-                    confidence=0.5,
-                    provenance=Provenance.llm,
-                ),
-            ],
-        )
-        store.annotate_entry("pub-nlp-2019", ann)
-        sem_path = tmp_path / "sem.yaml"
-        assert sem_path.exists()
-        content = sem_path.read_text()
-        assert "pub-nlp-2019" in content
-
-
-# --- add_relationship ---
-
-
-class TestAddRelationship:
-    def test_success(self, minimal_store):
-        count_before = len(minimal_store.semantics.relationships)
-        rel = Relationship(
-            source_id=EntryId("work-acme-2023"),
-            target_id=EntryId("pub-nlp-2019"),
-            type=RelationshipType.resulted_in,
-        )
-        minimal_store.add_relationship(rel)
-        assert len(minimal_store.semantics.relationships) == count_before + 1
-
-    def test_unknown_source_raises(self, minimal_store):
-        rel = Relationship(
-            source_id=EntryId("nonexistent"),
-            target_id=EntryId("pub-nlp-2019"),
-            type=RelationshipType.relates_to,
-        )
-        with pytest.raises(ValueError, match="not found"):
-            minimal_store.add_relationship(rel)
-
-    def test_unknown_target_raises(self, minimal_store):
-        rel = Relationship(
-            source_id=EntryId("work-acme-2023"),
-            target_id=EntryId("nonexistent"),
-            type=RelationshipType.relates_to,
-        )
-        with pytest.raises(ValueError, match="not found"):
-            minimal_store.add_relationship(rel)
-
-
 # --- Cross-reference validation ---
 
 
@@ -275,13 +168,13 @@ class TestCrossReferenceValidation:
             logger.remove(handler_id)
         assert not any("unknown entry IDs" in w for w in warnings)
 
-    def test_warns_on_dangling_refs(self, minimal_resume, tmp_path):
+    def test_warns_on_dangling_refs(self, minimal_resume):
         semantics = SemanticOverlay(
             annotations=[
                 EntryAnnotations(entry_id=EntryId("dangling-id")),
             ],
         )
-        store = ResumeStore(minimal_resume, semantics, tmp_path / "sem.yaml")
+        store = ResumeStore(minimal_resume, semantics)
         warnings: list[str] = []
         from loguru import logger
 
