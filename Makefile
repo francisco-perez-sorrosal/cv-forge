@@ -19,7 +19,7 @@ REMOTE_MCP_CONFIG     = config/cv_mcp.json
 build-skill:
 	mkdir -p $(DIST_SKILL)
 	@for skill in $(SKILLS); do \
-		cd skills/$$skill && zip -r ../../$(DIST_SKILL)/$$skill.zip SKILL.md references/ && cd ../..; \
+		cd plugins/cv/skills/$$skill && zip -r $(CURDIR)/$(DIST_SKILL)/$$skill.zip SKILL.md references/ && cd $(CURDIR); \
 	done
 
 # --- Install targets ---
@@ -49,11 +49,11 @@ install-claude-desktop: build-skill
 MCP_TARGET ?= local
 install-claude-code:
 ifeq ($(MCP_TARGET),local)
-	@jq --argjson cfg "$$(jq '.mcpServers.$(MCP_SERVER_KEY)' .claude-plugin/mcp-local.json)" \
+	@jq --argjson cfg "$$(jq '.mcpServers.$(MCP_SERVER_KEY)' plugins/cv/.claude-plugin/mcp-local.json)" \
 		'.mcpServers.$(MCP_SERVER_KEY) = $$cfg' .mcp.json > .mcp.json.tmp \
 		&& mv .mcp.json.tmp .mcp.json
-	@echo "MCP server: local (stdio via pixi) -> .mcp.json"
-	claude plugin install --scope user .
+	@echo "MCP server: local (http via cv-forge serve) -> .mcp.json"
+	claude plugin install --scope user ./plugins/cv
 	@echo "Plugin: installed from local directory"
 else ifeq ($(MCP_TARGET),remote)
 	claude plugin marketplace add francisco-perez-sorrosal/bit-agora

@@ -1,0 +1,20 @@
+{
+  "name": "cv",
+  "description": "Francisco Perez-Sorrosal's CV — read, summarise and tailor it",
+  "author": {
+    "name": "Francisco Perez-Sorrosal",
+    "email": "fperezsorrosal@gmail.com",
+    "url": "https://github.com/francisco-perez-sorrosal"
+  },
+  "homepage": "https://github.com/francisco-perez-sorrosal/cv-forge/tree/main/plugins/cv",
+  "repository": "https://github.com/francisco-perez-sorrosal/cv-forge",
+  "license": "MIT",
+  "keywords": ["cv", "mcp", "skill"],
+  "skills": ["./skills/"],
+  "mcpServers": {
+    "fps_cv_mcp": {
+      "type": "http",
+      "url": "https://fps-cv-mcp.wasmer.app/mcp"
+    }
+  }
+}
