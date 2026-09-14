@@ -15,11 +15,14 @@ refresh loop.
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from functools import lru_cache
 
+import certifi
 import httpx2
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -129,6 +132,20 @@ def format_unavailable(
 
 
 RELEASE_MANIFEST_ASSET = "release.json"
+
+
+@lru_cache(maxsize=1)
+def _ca_context() -> ssl.SSLContext:
+    """TLS context verifying against certifi's bundle.
+
+    httpx2's default is the OS trust store (via truststore); the WASIX image
+    on Wasmer Edge has none, so every HTTPS fetch there failed with
+    CERTIFICATE_VERIFY_FAILED. `SSL_CERT_FILE` still wins when set, matching
+    Python's own default-context behaviour.
+    """
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 PDF_ASSET_NAME = "FranciscoPerezSorrosal_CV.pdf"
 DEFAULT_CV_REPO = "francisco-perez-sorrosal/cv"
 DEFAULT_RELEASES_URL = f"https://github.com/{DEFAULT_CV_REPO}/releases/latest"
@@ -184,7 +201,9 @@ class GitHubReleaseFetcher:
         url = self.download_url(name)
         try:
             async with httpx2.AsyncClient(
-                timeout=self._timeout, follow_redirects=True
+                timeout=self._timeout,
+                follow_redirects=True,
+                verify=_ca_context(),
             ) as client:
                 response = await client.get(url)
         except httpx2.TimeoutException as exc:

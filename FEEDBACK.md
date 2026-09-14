@@ -35,6 +35,7 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-005 | anybuild | anybuild / Python-MCP provider | paper-cut | The MCP provider appends `mcp[cli]` to the cross-install command unconditionally, re-adding the `[cli]` extra (typer, rich, …) a project deliberately dropped to keep the Edge image small |
 | F-006 | WASIX index + Wasmer Edge runtime | WASIX index / Edge runtime / packaging | blocker | `cffi 2.1.0+wasix.{1,2,3}` ships `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) but the Edge `python/python 3.13.17` runtime is a wasi-threads build that only loads `…-wasi-threads.so` — so `cryptography` (required by every `mcp` 2.x at import) dies on Edge with `ModuleNotFoundError: _cffi_backend`; the same image imports fine under `wasmer run` locally, which is a non-threads build |
 | F-007 | wasmer (CLI) / Wasmer Edge | Edge deploy / CLI | paper-cut | `wasmer deploy` health-checks `/` and reports a false "fails with a non-success status code of 404" for an app that serves `/healthz` and `/mcp`; the same sentence with `500` was the only signal for the real F-006 crash |
+| F-010 | Wasmer Edge runtime (WASIX Python image) / docs | Edge runtime / networking | blocker | The WASIX Python image has no CA certificate store: every outbound HTTPS request with default verification fails with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`; nothing in the docs or the build output says so — ship `certifi` and pass an explicit SSL context |
 | F-009 | wasmer (CLI) / static-website template / docs | static site / Edge deploy | workaround | `wasmer app create --template static-website` scaffolds `app.yaml` + `Staticfile` + `settings/config.toml` + `public/` and its README says "run `wasmer deploy`", but `wasmer deploy --non-interactive` refuses: "The app.yaml references a local package, but no wasmer.toml manifest was found … use --build-remote"; a hand-written `wasmer.toml` for `wasmer/static-web-server` fixes it |
 | F-008 | setup-wasmer | CI action | paper-cut | `wasmerio/setup-wasmer` v3.1 targets Node.js 20 (GitHub force-runs it on Node 24 with a deprecation annotation) and the CLI it installs was not on PATH inside a `pixi run` step (`WASMER_DIR` is exported, `$WASMER_DIR/bin` is not reliably on PATH) |
 | F-005 | wasmerio/setup-wasmer | CI action | paper-cut | `action.yml`'s only documented input is `version` (default `''`); no README/marketplace text states the accepted format (plain SemVer? `v`-prefixed? range?) or what `''` resolves to -- confirmed empirically, not from docs |
@@ -278,6 +279,24 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** template README; <https://docs.wasmer.io/edge/tutorials/cdn> (2026-09-14) — the manifest above is reconstructed from the runner/`fs` conventions, not copied from a documented example.
 - **Evidence:** publish run `34865183944` in `francisco-perez-sorrosal/cv`, step "Deploy the static site" (message quoted verbatim); `deploy/site/wasmer.toml` in this repo.
 - **Related:** none in the sibling ledger.
+
+### F-010 — The WASIX Python image has no CA certificate store, so default-verified HTTPS fails on Edge
+- **Target repo:** Wasmer Edge runtime / `python/python` WASIX package (owning repo to confirm) + docs.wasmer.io
+- **Area:** Edge runtime / networking
+- **Severity:** blocker (the server's whole "fetch the latest release at runtime" design was dead on Edge until diagnosed; found only after adding the exception text to our health endpoint)
+- **Environment:** `python/python` 3.13.17 (CPython 3.13.15) image built by anybuild 0.28.4, `mcp` 2.2.0 → `httpx2` 2.12 (verifies via `truststore` 0.10.4 = the OS trust store), app `fps-cv-mcp` version for `v1.0.6`, 2026-09-14.
+- **Steps to reproduce:**
+  1. Any `httpx2`/`httpx`/`urllib` HTTPS GET with default verification from inside an Edge Python app — here `https://github.com/francisco-perez-sorrosal/cv/releases/latest/download/release.json`.
+- **Expected:** a CA bundle in the image (or `SSL_CERT_FILE` preset by the runtime), or at least a build-time warning that TLS verification will have no roots.
+- **Actual:** the same code that works locally fails on Edge with
+  ```
+  ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)
+  ```
+  and, because our client mapped every transport error to a generic `http_error`, three deploys went by before the message was visible. The sibling project never hit this because its only TLS connection used a private CA it configured explicitly.
+- **Proposed fix:** ship a CA bundle in the WASIX Python image and point `SSL_CERT_FILE`/`SSL_CERT_DIR` at it (or vendor `certifi` and set the env var); document under "Networking from Python on Edge" that `truststore`-based clients (the `httpx2` default) need an explicit `certifi` context.
+- **Docs consulted:** <https://docs.wasmer.io/> Edge Python / networking pages (2026-09-14) — no mention of certificates.
+- **Evidence:** `/healthz` body of app version `v1.0.6` (quoted above); `src/cv_forge/data/release.py` `_ca_context()` (the fix: `certifi` dependency + `ssl.create_default_context(cafile=certifi.where())` passed as `verify=`).
+- **Related:** sdk-mcp F-013 (private-CA TLS documented only deep) — adjacent; this one is about the *public* roots being absent.
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer

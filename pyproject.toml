@@ -34,6 +34,9 @@ dependencies = [
     "pydantic>=2.12,<2.13.5",
     "cryptography>=43,<50.0.1",
     "cffi>=2.1,<2.1.1",
+    # CA bundle for the release fetcher: httpx2 verifies via the OS trust
+    # store (truststore), which the WASIX image does not have.
+    "certifi>=2025.1",
 ]
 
 [project.urls]
