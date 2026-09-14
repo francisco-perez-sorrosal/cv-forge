@@ -1,30 +1,34 @@
 # Skills
 
-[Agent Skills](https://agentskills.io) for skill-compatible AI clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, VS Code, and others). Each skill composes with the CV MCP server tools to provide structured workflows.
+Agent Skills for working with Francisco Perez-Sorrosal's CV. Each skill is a handler that composes with the CV MCP server to provide structured workflows for retrieval, summarization, rendering, and job-targeted tailoring.
 
 ## Skills Catalog
 
-| Skill | Purpose | Trigger Examples |
-|-------|---------|-----------------|
-| [cv-analyst](cv-analyst/SKILL.md) | CV retrieval, summarization, and rendering | "summarize CV", "HTML version", "LaTeX", "Typst", "quick overview" |
-| [cv-tailoring](cv-tailoring/SKILL.md) | Job-targeted CV tailoring with compiled PDF output | "tailor CV for this job", "adapt resume", "CV for job" |
+| Skill | Purpose | Triggers | References |
+|-------|---------|----------|------------|
+| [cv-analyst](cv-analyst/SKILL.md) | CV retrieval, summarization, and rendering in markdown, plain text, PDF, HTML, LaTeX, and Typst formats. | "summarize CV", "HTML version", "LaTeX", "Typst", "quick overview" | [summary-presets.md](cv-analyst/references/summary-presets.md) — pre-configured profiles for hiring screens and executive briefings |
+| [cv-tailoring](cv-tailoring/SKILL.md) | Job-targeted CV tailoring that analyzes a job description, generates a tailoring specification, and produces a page-constrained (2-3 pages) compiled PDF via LaTeX or Typst. | "tailor CV for this job", "adapt resume", "CV for job", "resume optimization" | [methodology.md](cv-tailoring/references/methodology.md) — tailoring methodology with strategic analysis, repositioning, and evaluation phases |
 
-## cv-analyst
+## Installation and Usage
 
-General-purpose CV retrieval and summarization. Outputs: markdown, plain text, PDF, HTML, LaTeX, Typst.
+The plugin connects to the CV MCP server via native HTTP at `https://fps-cv-mcp.wasmer.app/mcp` (configured in `plugins/cv/.claude-plugin/plugin.json`). Both skills route CV content retrieval through this server.
 
-- HTML, LaTeX, and Typst are server-rendered via `get_cv(format=...)` — no client-side template assembly
-- Summarization (depth, audience, tone, emphasis) applies to markdown/plain text only
-- Delegates to cv-tailoring when a job description is introduced
+### Claude Code
 
-Reference files: [summary-presets.md](cv-analyst/references/summary-presets.md)
+Add the marketplace source and install the plugin:
 
-## cv-tailoring
+```bash
+claude plugin marketplace add francisco-perez-sorrosal/bit-agora
+claude plugin install cv
+```
 
-Job-targeted CV tailoring. Analyzes a job description, generates a `TailoringSpec`, renders a page-constrained CV via `get_tailored_cv` (LaTeX or Typst backend), and compiles to PDF.
+### Claude Desktop
 
-- Integrates with LinkedIn MCP server for job description retrieval
-- 7-step workflow: obtain job context, retrieve CV, analyze, generate spec, render, integrity check, deliver
-- Produces 6 deliverables: intelligence brief, repositioned CV, spec, compiled PDF, alignment assessment, positioning summary
+Build skill packages with `make build-skill`, then upload the zip files manually:
 
-Reference files: [methodology.md](cv-tailoring/references/methodology.md)
+1. Run `make build-skill` to create `dist/skill/cv-analyst.zip` and `dist/skill/cv-tailoring.zip`
+2. Open Claude Desktop Settings > Features > Add Skill
+3. Upload each zip file (each skill is packaged separately with SKILL.md and references/)
+4. Restart Claude Desktop
+
+Skills follow the Agent-Skills spec for portability across compatible clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, VS Code, and others).
