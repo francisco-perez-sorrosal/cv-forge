@@ -109,13 +109,30 @@ git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$STAGE"
 # own cv-data/ -- printing which path was taken either way, since silently
 # picking one would hide a real "no release yet" signal from the operator.
 BAKED_DIR="$STAGE/baked"
+CV_DATA_REPO="${CV_RELEASE_REPO:-francisco-perez-sorrosal/cv}"
+CV_DATA_REF="${CV_DATA_REF:-main}"
 if command -v cv-forge >/dev/null 2>&1 \
     && cv-forge fetch-snapshot -o "$BAKED_DIR" >/dev/null 2>&1; then
     echo "deploy.sh: baked fallback fetched from the latest cv release into $BAKED_DIR"
-else
-    echo "deploy.sh: no cv release reachable yet -- copying local cv-data/ as the baked fallback"
+elif [ -n "${CV_DATA_DIR:-}" ] && [ -f "$CV_DATA_DIR/resume.yaml" ]; then
+    echo "deploy.sh: no cv release reachable -- copying CV_DATA_DIR ($CV_DATA_DIR) as the baked fallback"
+    rm -rf "$BAKED_DIR"
+    cp -R "$CV_DATA_DIR" "$BAKED_DIR"
+elif [ -f cv-data/resume.yaml ]; then
+    echo "deploy.sh: no cv release reachable -- copying local cv-data/ as the baked fallback"
     rm -rf "$BAKED_DIR"
     cp -R cv-data "$BAKED_DIR"
+else
+    # The data repo is public: a shallow clone needs no token and works in CI
+    # before the first release exists. Only cv-data/ is kept.
+    echo "deploy.sh: no cv release and no local data -- cloning $CV_DATA_REPO@$CV_DATA_REF for the baked fallback"
+    CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cv-data-clone.XXXXXX")"
+    git clone --quiet --depth 1 --branch "$CV_DATA_REF" "https://github.com/$CV_DATA_REPO.git" "$CLONE_DIR" \
+        || fail "could not clone $CV_DATA_REPO@$CV_DATA_REF for the baked fallback"
+    [ -f "$CLONE_DIR/cv-data/resume.yaml" ] || fail "$CV_DATA_REPO@$CV_DATA_REF has no cv-data/resume.yaml"
+    rm -rf "$BAKED_DIR"
+    cp -R "$CLONE_DIR/cv-data" "$BAKED_DIR"
+    rm -rf "$CLONE_DIR"
 fi
 
 # Vendor a threads-ABI copy of cffi's extension module. The WASIX index ships
