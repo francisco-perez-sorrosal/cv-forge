@@ -39,6 +39,9 @@ from cv_forge import __version__ as CV_FORGE_VERSION
 from cv_forge.data.local import LocalDataDirError, load_local_dir
 from cv_forge.data.snapshot import DataOrigin, LocalDir
 from cv_forge.data.store import ResumeStore
+from cv_forge.models.resume import Resume
+from cv_forge.models.semantics import SemanticOverlay
+from cv_forge.models.validation import Finding, validate_resume
 from cv_forge.render.renderers import (
     render_html,
     render_latex,
@@ -48,7 +51,13 @@ from cv_forge.render.renderers import (
 
 ASSET_STEM = "FranciscoPerezSorrosal_CV"
 DEFAULT_RENDER_OUT = Path("rendered-cv")
+DEFAULT_SCHEMAS_OUT = Path("schemas")
 LATEXMK = "latexmk"
+JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+_SCHEMA_FILES: dict[str, type[Resume] | type[SemanticOverlay]] = {
+    "resume.schema.json": Resume,
+    "semantics.schema.json": SemanticOverlay,
+}
 
 _EXAMPLES = """\
 EXAMPLES
@@ -157,9 +166,34 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("--data-dir", default=None, metavar="DIR")
     render_parser.set_defaults(func=_cmd_render)
 
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Check a data directory against the schemas and cross-references",
+        parents=[common],
+    )
+    validate_parser.add_argument("--data-dir", default=None, metavar="DIR")
+    validate_parser.set_defaults(func=_cmd_validate)
+
+    export_schemas_parser = subparsers.add_parser(
+        "export-schemas",
+        help="Generate schemas/*.schema.json from the Pydantic models",
+        parents=[common],
+    )
+    export_schemas_parser.add_argument(
+        "-o",
+        "--out",
+        default=None,
+        metavar="DIR",
+        help=f"Output directory (default: {DEFAULT_SCHEMAS_OUT})",
+    )
+    export_schemas_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Check for drift against the current models; write nothing",
+    )
+    export_schemas_parser.set_defaults(func=_cmd_export_schemas)
+
     for name, summary in (
-        ("validate", "Check a data directory against the schemas and cross-references"),
-        ("export-schemas", "Generate schemas/*.schema.json from the Pydantic models"),
         ("fetch-snapshot", "Download a release's data assets into a directory"),
         ("serve", "Run the MCP server locally (stdio or streamable-http)"),
     ):
@@ -241,10 +275,9 @@ def _cmd_render(args: argparse.Namespace) -> int:
     ]
 
     if args.json:
-        _print_json_envelope("render", snapshot.origin, outputs)
+        _print_json_envelope("render", _origin_kind(snapshot.origin), outputs)
     else:
-        for output in outputs:
-            print(output["path"])
+        _print_output_paths(outputs)
     return 0
 
 
@@ -322,9 +355,15 @@ def _output_entry(fmt: str, path: Path) -> dict[str, object]:
     }
 
 
+def _print_output_paths(outputs: list[dict[str, object]]) -> None:
+    """Non-`--json` success path (§1.4): stdout carries only artifact paths."""
+    for output in outputs:
+        print(output["path"])
+
+
 def _print_json_envelope(
     command: str,
-    origin: DataOrigin,
+    data_origin: dict[str, object],
     outputs: list[dict[str, object]],
     *,
     status: str = "ok",
@@ -334,7 +373,7 @@ def _print_json_envelope(
         "command": command,
         "status": status,
         "cv_forge_version": CV_FORGE_VERSION,
-        "data_origin": _origin_kind(origin),
+        "data_origin": data_origin,
         "outputs": outputs,
         "findings": findings or [],
     }
@@ -342,8 +381,8 @@ def _print_json_envelope(
 
 
 def _origin_kind(origin: DataOrigin) -> dict[str, object]:
-    """`render`'s data-dir ladder (§1.2) only ever resolves a `LocalDir`
-    origin -- `serve` (M1.16) is the first command that can see
+    """`render`'s and `validate`'s data-dir ladder (§1.2) only ever resolves a
+    `LocalDir` origin -- `serve` (M1.16) is the first command that can see
     `ReleaseAssets`/`BakedSnapshot`, which get their own mapping there."""
     match origin:
         case LocalDir(path=path):
@@ -375,6 +414,124 @@ def _print_missing_latexmk_error() -> None:
         "    or:    cv-forge render -f tex          # source only, no compiler needed",
         file=sys.stderr,
     )
+
+
+# --- validate ---
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    data_dir = args.data_dir or os.environ.get("CV_DATA_DIR")
+    if not data_dir:
+        _print_no_data_dir_error()
+        return 2
+
+    try:
+        snapshot = load_local_dir(Path(data_dir))
+    except LocalDataDirError as exc:
+        print(f"cv-forge: {exc}", file=sys.stderr)
+        return 2
+
+    findings = validate_resume(snapshot.resume)
+    if args.json:
+        _print_json_envelope(
+            "validate",
+            _origin_kind(snapshot.origin),
+            [],
+            status="failed" if findings else "ok",
+            findings=[f.to_dict() for f in findings],
+        )
+    elif findings:
+        _print_validate_findings(findings)
+    return 3 if findings else 0
+
+
+def _print_validate_findings(findings: list[Finding]) -> None:
+    plural = "" if len(findings) == 1 else "s"
+    print(
+        f"cv-forge: data is not valid ({len(findings)} error{plural}).", file=sys.stderr
+    )
+    for finding in findings:
+        kind = finding.code.split(".", 1)[0]
+        print(f"  [{kind}] {finding.pointer}    {finding.message}", file=sys.stderr)
+        if finding.hint:
+            print(f"    -> {finding.hint}", file=sys.stderr)
+    print(
+        "  To fix:  edit the fields above, then  cv-forge validate --data-dir <dir>",
+        file=sys.stderr,
+    )
+
+
+# --- export-schemas ---
+
+
+def _cmd_export_schemas(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out) if args.out else DEFAULT_SCHEMAS_OUT
+    schemas = _generate_schemas()
+
+    if args.check:
+        drift = _find_schema_drift(out_dir, schemas)
+        if args.json:
+            _print_json_envelope(
+                "export-schemas",
+                {"kind": "pydantic_models"},
+                [],
+                status="failed" if drift else "ok",
+                findings=drift,
+            )
+        elif drift:
+            _print_schema_drift_findings(drift)
+        return 4 if drift else 0
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outputs = [
+        _write_schema(out_dir / name, schema) for name, schema in schemas.items()
+    ]
+    if args.json:
+        _print_json_envelope("export-schemas", {"kind": "pydantic_models"}, outputs)
+    else:
+        _print_output_paths(outputs)
+    return 0
+
+
+def _generate_schemas() -> dict[str, dict[str, object]]:
+    """Fresh JSON Schema 2020-12 for each model -- the copy `cv`'s CI mirrors."""
+    return {
+        name: {"$schema": JSON_SCHEMA_DIALECT, **model.model_json_schema()}
+        for name, model in _SCHEMA_FILES.items()
+    }
+
+
+def _write_schema(path: Path, schema: dict[str, object]) -> dict[str, object]:
+    path.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
+    return _output_entry(path.name.removesuffix(".schema.json"), path)
+
+
+def _find_schema_drift(
+    out_dir: Path, schemas: dict[str, dict[str, object]]
+) -> list[dict[str, object]]:
+    """One finding per file that is missing or does not match a fresh generation."""
+    findings: list[dict[str, object]] = []
+    for name, expected in schemas.items():
+        path = out_dir / name
+        on_disk = json.loads(path.read_text()) if path.is_file() else None
+        if on_disk != expected:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "schema.drift",
+                    "pointer": f"/{name}",
+                    "message": f"{path} is out of date with the Pydantic models",
+                    "hint": f"cv-forge export-schemas -o {out_dir}",
+                }
+            )
+    return findings
+
+
+def _print_schema_drift_findings(findings: list[dict[str, object]]) -> None:
+    print("cv-forge: schema drift detected.", file=sys.stderr)
+    for finding in findings:
+        print(f"  {finding['pointer']}    {finding['message']}", file=sys.stderr)
+        print(f"    To fix:  {finding['hint']}", file=sys.stderr)
 
 
 if __name__ == "__main__":
