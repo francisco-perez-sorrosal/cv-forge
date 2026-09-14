@@ -172,7 +172,7 @@ jobs:
                   FranciscoPerezSorrosal_CV.typ FranciscoPerezSorrosal_CV.md \
                   FranciscoPerezSorrosal_CV.html release.json)
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            # Republish (REQ-04): tag/release/latest pointer unchanged, assets replaced.
+            # Republish: tag/release/latest pointer unchanged, assets replaced.
             gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
           else
             draft_flag=()
@@ -207,7 +207,7 @@ jobs:
           fi
           wasmer deploy --non-interactive
 
-      - name: Verify the published site is live (REQ-06)
+      - name: Verify the published site is live
         if: inputs.deploy-site
         env:
           TAG: ${{ inputs.ref }}
