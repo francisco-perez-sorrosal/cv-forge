@@ -35,6 +35,7 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-005 | anybuild | anybuild / Python-MCP provider | paper-cut | The MCP provider appends `mcp[cli]` to the cross-install command unconditionally, re-adding the `[cli]` extra (typer, rich, …) a project deliberately dropped to keep the Edge image small |
 | F-006 | WASIX index + Wasmer Edge runtime | WASIX index / Edge runtime / packaging | blocker | `cffi 2.1.0+wasix.{1,2,3}` ships `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) but the Edge `python/python 3.13.17` runtime is a wasi-threads build that only loads `…-wasi-threads.so` — so `cryptography` (required by every `mcp` 2.x at import) dies on Edge with `ModuleNotFoundError: _cffi_backend`; the same image imports fine under `wasmer run` locally, which is a non-threads build |
 | F-007 | wasmer (CLI) / Wasmer Edge | Edge deploy / CLI | paper-cut | `wasmer deploy` health-checks `/` and reports a false "fails with a non-success status code of 404" for an app that serves `/healthz` and `/mcp`; the same sentence with `500` was the only signal for the real F-006 crash |
+| F-009 | wasmer (CLI) / static-website template / docs | static site / Edge deploy | workaround | `wasmer app create --template static-website` scaffolds `app.yaml` + `Staticfile` + `settings/config.toml` + `public/` and its README says "run `wasmer deploy`", but `wasmer deploy --non-interactive` refuses: "The app.yaml references a local package, but no wasmer.toml manifest was found … use --build-remote"; a hand-written `wasmer.toml` for `wasmer/static-web-server` fixes it |
 | F-008 | setup-wasmer | CI action | paper-cut | `wasmerio/setup-wasmer` v3.1 targets Node.js 20 (GitHub force-runs it on Node 24 with a deprecation annotation) and the CLI it installs was not on PATH inside a `pixi run` step (`WASMER_DIR` is exported, `$WASMER_DIR/bin` is not reliably on PATH) |
 | F-005 | wasmerio/setup-wasmer | CI action | paper-cut | `action.yml`'s only documented input is `version` (default `''`); no README/marketplace text states the accepted format (plain SemVer? `v`-prefixed? range?) or what `''` resolves to -- confirmed empirically, not from docs |
 
@@ -245,6 +246,38 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** the action's README (no `version` format, no PATH note), 2026-09-14.
 - **Evidence:** run `34862858731`, job `deploy`, step "Deploy fps-cv-mcp" (log quoted above); `scripts/deploy.sh` resolution block.
 - **Related:** sdk-mcp F-039.
+
+### F-009 — The static-website template deploys only after adding a `wasmer.toml` its scaffold does not include
+- **Target repo:** wasmerio/wasmer (CLI `deploy`), the `static-website` template repo, docs.wasmer.io (static site / CDN tutorial)
+- **Area:** static site / Edge deploy
+- **Severity:** workaround
+- **Environment:** `wasmer` 7.4.1 (locally and via `setup-wasmer` in GitHub Actions `ubuntu-latest`), 2026-09-14.
+- **Steps to reproduce:**
+  1. `wasmer app create --template static-website --owner <me> --name fps-cv --dir site --non-interactive` → `site/` contains `app.yaml` (`package: .`), `Staticfile` (`root: public`), `settings/config.toml`, `public/…`, `README.md` ("Run this command to deploy to Wasmer Edge: `wasmer deploy`") — no `wasmer.toml`.
+  2. Put content in `public/`, then in CI: `wasmer deploy --non-interactive` with `WASMER_TOKEN` set.
+- **Expected:** the template deploys as its README says, or `wasmer deploy` generates the missing manifest from `Staticfile` the way the interactive path presumably does.
+- **Actual:**
+  ```
+  error: The app.yaml references a local package, but no wasmer.toml manifest was found in /home/runner/work/cv/cv/cv-forge/deploy/site - use --build-remote to deploy with a remote build.
+  ```
+  Adding this manifest makes both `wasmer run . --net` (local: `/` and `/health` → 200) and the deploy work:
+  ```toml
+  [dependencies]
+  "wasmer/static-web-server" = "1"
+  [fs]
+  "/public" = "public"
+  "/settings" = "settings"
+  [[command]]
+  name = "script"
+  module = "wasmer/static-web-server:webserver"
+  runner = "https://webc.org/runner/wasi"
+  [command.annotations.wasi]
+  main-args = ["-w", "/settings/config.toml"]
+  ```
+- **Proposed fix:** ship the `wasmer.toml` in the template (or have `wasmer deploy` synthesise it from `Staticfile` in non-interactive mode, as `--build-remote` apparently does server-side); say in the template README and the CDN tutorial which of the two files is authoritative.
+- **Docs consulted:** template README; <https://docs.wasmer.io/edge/tutorials/cdn> (2026-09-14) — the manifest above is reconstructed from the runner/`fs` conventions, not copied from a documented example.
+- **Evidence:** publish run `34865183944` in `francisco-perez-sorrosal/cv`, step "Deploy the static site" (message quoted verbatim); `deploy/site/wasmer.toml` in this repo.
+- **Related:** none in the sibling ledger.
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer

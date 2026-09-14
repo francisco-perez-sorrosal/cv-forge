@@ -1,0 +1,19 @@
+# Package manifest for the fps-cv static site: Wasmer's static-web-server
+# serving public/ with settings/config.toml. `wasmer deploy` (app.yaml,
+# `package: .`) requires this file; the static-website template's README
+# implies it is optional, but the CLI refuses to deploy a local package
+# without it (see FEEDBACK.md).
+[dependencies]
+"wasmer/static-web-server" = "1"
+
+[fs]
+"/public" = "public"
+"/settings" = "settings"
+
+[[command]]
+name = "script"
+module = "wasmer/static-web-server:webserver"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+main-args = ["-w", "/settings/config.toml"]
