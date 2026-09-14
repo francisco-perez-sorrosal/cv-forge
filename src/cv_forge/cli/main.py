@@ -39,6 +39,13 @@ from pathlib import Path
 from starlette.types import ASGIApp
 
 from cv_forge import __version__ as CV_FORGE_VERSION
+from cv_forge.data.bootstrap import (
+    InvalidCvDataError,
+    InvalidRefreshIntervalError,
+    StartupError,
+    describe_startup_error,
+    load_snapshot_or_raise,
+)
 from cv_forge.data.local import LocalDataDirError, load_local_dir
 from cv_forge.data.provider import CvDataProvider, ReleaseFetcher
 from cv_forge.data.release import (
@@ -655,6 +662,17 @@ def _print_fetch_unavailable_error(unavailable: ArtifactUnavailable) -> None:
 # --- serve ---
 
 
+def _print_startup_error(error: StartupError) -> None:
+    """Render `data.bootstrap.describe_startup_error`'s output in this CLI's
+    own `cv-forge:`/two-space-indent style (`_print_no_data_dir_error` and
+    friends above) -- the message *content* is shared with `mcp/main.py` via
+    `describe_startup_error`; only the surrounding print formatting differs
+    per entry point."""
+    print(f"cv-forge: {error.what}.", file=sys.stderr)
+    print(f"  {error.why}", file=sys.stderr)
+    print(f"  To fix:  {error.how}", file=sys.stderr)
+
+
 def build_serve_app(args: argparse.Namespace) -> tuple[ASGIApp, CvDataProvider]:
     """Resolve a `CvDataProvider` and build the ASGI app, without binding a
     transport -- `_cmd_serve` calls this, then dispatches stdio/http.
@@ -672,7 +690,7 @@ def build_serve_app(args: argparse.Namespace) -> tuple[ASGIApp, CvDataProvider]:
 
     if args.data_dir:
         provider = CvDataProvider(
-            initial=load_local_dir(Path(args.data_dir)), fetcher=None
+            initial=load_snapshot_or_raise(Path(args.data_dir)), fetcher=None
         )
     else:
         provider = build_provider_from_env()
@@ -680,7 +698,12 @@ def build_serve_app(args: argparse.Namespace) -> tuple[ASGIApp, CvDataProvider]:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
-    app, provider = build_serve_app(args)
+    try:
+        app, provider = build_serve_app(args)
+    except (LocalDataDirError, InvalidRefreshIntervalError, InvalidCvDataError) as exc:
+        error = describe_startup_error(exc)
+        _print_startup_error(error)
+        return error.exit_code
     if args.transport == "http":
         import uvicorn
 

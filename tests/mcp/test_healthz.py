@@ -162,12 +162,14 @@ async def _run_asgi_lifespan(app):
             shutdown_requested.set()
 
 
-async def _get_healthz(app) -> httpx2.Response:
+async def _get_healthz(
+    app, *, headers: dict[str, str] | None = None
+) -> httpx2.Response:
     async with _run_asgi_lifespan(app):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
         ) as client:
-            return await client.get("/healthz")
+            return await client.get("/healthz", headers=headers)
 
 
 class TestFreshAndStaleRefreshStates:
@@ -225,6 +227,25 @@ class TestPinnedRefreshState:
         # asserted here as key-absence, the strictest reading of "permits neither".
         assert "last_error" not in body
         assert "consecutive_failures" not in body
+
+
+class TestBrowserOriginIsAllowedByDefault:
+    """`_transport_security()`'s default protects the `Host` header but
+    (LIGHT_REVIEW_M1.8-rev.md N3) left `allowed_origins` empty, so the SDK's
+    `TransportSecuritySettings` rejected any request carrying an `Origin`
+    header at all -- e.g. MCP Inspector or a browser-based client hitting a
+    local `cv-forge serve` -- with a 403 that reads like an auth failure."""
+
+    def test_a_request_with_a_localhost_origin_is_not_rejected(self, tmp_path):
+        (tmp_path / "resume.yaml").write_bytes(RESUME_YAML)
+        provider = CvDataProvider(initial=load_local_dir(tmp_path), fetcher=None)
+        app = create_app(provider)
+
+        response = asyncio.run(
+            _get_healthz(app, headers={"Origin": "http://localhost:3000"})
+        )
+
+        assert response.status_code == 200
 
 
 class TestNoValidatedSnapshotIsUnreachableInProcess:

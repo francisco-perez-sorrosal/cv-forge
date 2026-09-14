@@ -257,13 +257,28 @@ class CountingAssetFetcher:
     """No-network fake that always serves a fixed PDF payload and counts how
     many times `fetch_asset` actually ran a fetch -- pins the PDF cache's hit
     rate, distinct from `FakeReleaseFetcher` above which always reports the
-    asset unavailable and never needs a call counter."""
+    asset unavailable and never needs a call counter.
+
+    `fetch_manifest` reports the manifest itself unavailable rather than
+    raising: `create_app`'s refresh loop polls `fetch_manifest` in the
+    background regardless of what the test is exercising, and
+    `refresh_once`'s broad exception guard would otherwise swallow a raised
+    `AssertionError` into a misleading "unexpected error" log line on every
+    run (`LIGHT_REVIEW_M1.8-rev.md` N5). Reporting `NO_RELEASE` fails the
+    poll benignly and keeps the boot-state tag at `None` -- a *real* manifest
+    would promote the snapshot mid-test and invalidate the cache-hit-rate
+    assertion this fake exists to pin."""
 
     pdf_bytes: bytes
     fetch_count: int = field(default=0, init=False)
 
     async def fetch_manifest(self) -> ReleaseManifest | ArtifactUnavailable:
-        raise AssertionError("fetch_pdf never calls fetch_manifest")
+        return ArtifactUnavailable(
+            name="release.json",
+            tag=None,
+            download_url=DOWNLOAD_URL,
+            reason="no_release",
+        )
 
     async def fetch_asset(self, name: str) -> bytes | ArtifactUnavailable:
         self.fetch_count += 1

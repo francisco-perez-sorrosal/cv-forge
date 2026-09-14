@@ -55,14 +55,23 @@ from cv_forge.data.snapshot import BakedSnapshot, DataOrigin, LocalDir, ReleaseA
 from cv_forge.mcp.server import bound_provider, mcp
 
 # `main.py`'s stdio and local `streamable-http` paths have no front door
-# validating the `Host` header for them, so the default here stays
-# *protected*, with the in-process test transport's synthetic hostname
-# allow-listed. Only `CV_TRUST_HOST=1` -- set by `scripts/deploy.sh` for the
-# Edge image, where Wasmer Edge already terminates and validates the public
-# hostname in front of this app -- turns the check off; the SDK's own
-# default (`enable_dns_rebinding_protection=True` with an empty
-# `allowed_hosts`) would otherwise reject every request there too.
-_LOCAL_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "testserver"]
+# validating the `Host`/`Origin` headers for them, so the default here stays
+# *protected*, mirroring the SDK's own localhost defaults
+# (`mcp.server.lowlevel.server.streamable_http_app`) verbatim plus the
+# in-process test transport's synthetic hostname. `CV_ALLOWED_ORIGINS`
+# (comma-separated) extends `allowed_origins` for a non-default local port
+# (e.g. a dev frontend on :3000) without disabling the check entirely. Only
+# `CV_TRUST_HOST=1` -- set by `scripts/deploy.sh` for the Edge image, where
+# Wasmer Edge already terminates and validates the public hostname in front
+# of this app -- turns the whole check off; the SDK's own default
+# (`enable_dns_rebinding_protection=True` with empty `allowed_hosts`/
+# `allowed_origins`) would otherwise reject every request there too.
+_LOCAL_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*", "testserver"]
+_LOCAL_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+]
 
 
 def _resolve_cv_forge_version() -> str:
@@ -80,11 +89,20 @@ def _resolve_cv_forge_version() -> str:
 _CV_FORGE_VERSION = _resolve_cv_forge_version()
 
 
+def _local_allowed_origins() -> list[str]:
+    origins = list(_LOCAL_ALLOWED_ORIGINS)
+    extra = os.environ.get("CV_ALLOWED_ORIGINS", "")
+    origins.extend(origin.strip() for origin in extra.split(",") if origin.strip())
+    return origins
+
+
 def _transport_security() -> TransportSecuritySettings:
     if os.environ.get("CV_TRUST_HOST") == "1":
         return TransportSecuritySettings(enable_dns_rebinding_protection=False)
     return TransportSecuritySettings(
-        enable_dns_rebinding_protection=True, allowed_hosts=_LOCAL_ALLOWED_HOSTS
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_LOCAL_ALLOWED_HOSTS,
+        allowed_origins=_local_allowed_origins(),
     )
 
 

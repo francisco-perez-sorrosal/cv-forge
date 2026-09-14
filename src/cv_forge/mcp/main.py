@@ -24,9 +24,11 @@ from typing import Literal, NoReturn, cast
 from loguru import logger
 
 from cv_forge.data.bootstrap import (
-    DEFAULT_REFRESH_INTERVAL_SECONDS,
+    InvalidCvDataError,
+    InvalidRefreshIntervalError,
+    StartupError,
     build_provider_from_env,
-    repo_root,
+    describe_startup_error,
 )
 from cv_forge.data.local import LocalDataDirError
 from cv_forge.data.provider import CvDataProvider
@@ -36,37 +38,23 @@ DEFAULT_PORT = 10000
 
 
 def _build_provider_or_exit() -> CvDataProvider:
-    """`build_provider_from_env()`, rendering its two documented failure
-    modes as a three-part (what/why/how) startup error on stderr instead of
-    an uncaught traceback (`INTERFACE_DESIGN.md §1.6`'s error shape)."""
+    """`build_provider_from_env()`, rendering its documented failure modes
+    as a three-part (what/why/how) startup error on stderr instead of an
+    uncaught traceback (`INTERFACE_DESIGN.md §1.6`'s error shape). The
+    mapping from exception to message lives in
+    `data.bootstrap.describe_startup_error` -- shared with
+    `cli/main.py::_cmd_serve` -- not re-derived here."""
     try:
         return build_provider_from_env()
-    except LocalDataDirError as exc:
-        _exit_with_startup_error(
-            what="no CV data directory found",
-            why=str(exc),
-            how=(
-                "export CV_DATA_DIR=/path/to/cv-data\n"
-                "       or:    export CV_BAKED_DIR=/path/to/baked\n"
-                f"       or:    place resume.yaml in {repo_root() / 'cv-data'}"
-            ),
-        )
-    except ValueError as exc:
-        _exit_with_startup_error(
-            what="invalid CV_REFRESH_INTERVAL",
-            why=str(exc),
-            how=(
-                "set CV_REFRESH_INTERVAL to a number of seconds, e.g. "
-                f"CV_REFRESH_INTERVAL={DEFAULT_REFRESH_INTERVAL_SECONDS:.0f}"
-            ),
-        )
+    except (LocalDataDirError, InvalidRefreshIntervalError, InvalidCvDataError) as exc:
+        _exit_with_startup_error(describe_startup_error(exc))
 
 
-def _exit_with_startup_error(*, what: str, why: str, how: str) -> NoReturn:
-    print(f"cv-forge-mcp: {what}.", file=sys.stderr)
-    print(f"     {why}", file=sys.stderr)
-    print(f"     To fix:  {how}", file=sys.stderr)
-    sys.exit(1)
+def _exit_with_startup_error(error: StartupError) -> NoReturn:
+    print(f"cv-forge-mcp: {error.what}.", file=sys.stderr)
+    print(f"     {error.why}", file=sys.stderr)
+    print(f"     To fix:  {error.how}", file=sys.stderr)
+    sys.exit(error.exit_code)
 
 
 def _transport_config() -> tuple[Literal["stdio", "streamable-http"], str, int, bool]:
