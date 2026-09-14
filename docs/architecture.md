@@ -1,0 +1,103 @@
+# Architecture Guide
+
+<!-- Developer navigation guide. Every component name and file path in this document has been
+     verified against the codebase. Only components that exist on disk are included.
+     For design rationale, planned components, and architectural evolution, see .ai-state/DESIGN.md.
+     Maintained by pipeline agents: created by systems-architect, updated by implementer,
+     verified by doc-engineer at pipeline checkpoints. -->
+
+> **A split is in flight.** This guide describes the code **as it exists on disk today**, on the `mcp` lineage, where the CV data and the machinery still share one repository. The target architecture — a data-only `cv` repo and a `cv-forge` machinery repo, with the package renamed to `cv_forge` and the data layer rewritten to source from GitHub Release assets — is documented in [`.ai-state/DESIGN.md`](../.ai-state/DESIGN.md), where each component carries a `Status` of `Built` or `Designed`. Read that document for where things are going; read this one to find things now.
+
+## 1. Overview
+
+| Attribute | Value |
+|-----------|-------|
+| **System** | cv_mcp_server |
+| **Type** | MCP server + document renderer, distributed as a Claude Code plugin |
+| **Language / Framework** | Python 3.13 / `mcp` 1.x (`FastMCP`), Jinja2, Pydantic v2 |
+| **Architecture pattern** | Layered package: Pydantic models → store → renderers → MCP surface, with a script-level CLI driver |
+| **Last verified against code** | 2026-09-13 |
+
+One structured YAML description of a CV (`cv-data/resume.yaml`), plus a semantic overlay that annotates it with topics, cross-entry relationships and skill proficiency (`cv-data/resume-semantics.yaml`), is loaded once into a `ResumeStore` and then exposed two ways: as an MCP tool and resource surface for agents, and as four rendered document formats (markdown, LaTeX, HTML, Typst) for humans. Entry IDs follow a `<type>-<slug>` convention (`work-yahoo-kgs-2023`, `pub-htl-acl-2019`) and are the join key between the resume and its overlay.
+
+## 2. System Context
+
+![System Context (L0) as built — an MCP client and a developer outside the boundary; the cv_mcp_server package inside; the cv plugin declaring the remote endpoint; cv-data YAML files read at import time](diagrams/architecture/rendered/context.svg)
+
+<details>
+<summary>Diagram source: <code>docs/diagrams/architecture/src/architecture.c4</code></summary>
+
+Regenerate with the pre-commit `diagram-regen` hook, or manually:
+
+```
+likec4 gen d2 docs/diagrams/architecture/src -o docs/diagrams/architecture/rendered/
+d2 docs/diagrams/architecture/rendered/context.d2    docs/diagrams/architecture/rendered/context.svg
+d2 docs/diagrams/architecture/rendered/components.d2 docs/diagrams/architecture/rendered/components.svg
+```
+
+</details>
+
+> **Component detail:** [Components](#3-components)
+
+## 3. Components
+
+![Components (L1) as built — models, data-store, render, mcp and cli inside cv_mcp_server, with the store reading the cv-data YAML files at import time and everything else reading through the store](diagrams/architecture/rendered/components.svg)
+
+<!-- aac:generated source=docs/diagrams/architecture/src/architecture.c4 view=components last-regen=2026-09-13 -->
+
+### 3a. Structural components
+
+| Component | Responsibility | Key Files |
+|-----------|---------------|-----------|
+| models | Pydantic definitions of the resume hierarchy (`Resume`, `WorkEntry`, `Project`, `Publication`, …), the semantic overlay (`SemanticOverlay`, `Topic`, `Relationship`, `SkillProficiency`) and the tailoring spec (`TailoringSpec`, `SectionDirective`, `EntryEmphasis`). Follow `ConfigDict(populate_by_name=True)` + `Field()`. | `src/cv_mcp_server/models/resume.py`, `models/semantics.py`, `models/tailoring.py` |
+| data-store | `ResumeStore`: loads both YAML files from a directory, validates cross-references between the resume and its overlay, builds the entry-by-ID index, and answers the query methods every tool reads through. | `src/cv_mcp_server/store.py` |
+| render | Jinja2 renderers for markdown, LaTeX (moderncv), HTML (self-contained, interactive) and Typst (moderner-cv), plus the tailored LaTeX and Typst variants, and the per-section markdown split. | `src/cv_mcp_server/renderers.py`, `src/cv_mcp_server/templates/` (13 `.j2` files) |
+| mcp | The shared `FastMCP` instance and transport configuration, 17 `fps-cv://` resources, and 16 tools split across data, query, semantic and summarize modules. Tool and resource modules are auto-discovered by `pkgutil` walk at startup. | `src/cv_mcp_server/server.py`, `resources.py`, `main.py`, `tools/{data,query,semantic,summarize}.py` |
+| cli | Renders a chosen format to `rendered-cv/` for a quick preview, or to a dated `latest-cv/` snapshot with optional `latexmk` compilation and a `latest.pdf` copy. | `scripts/render_cv.py` |
+
+### 3b. Capabilities
+
+| Capability | Responsibility | Key Files |
+|-----------|---------------|-----------|
+| Job-targeted tailoring | Reorder sections, filter or de-emphasise entries and override the profile summary for a specific job description, rendering to LaTeX or Typst for compilation. Driven by the `cv-tailoring` skill through `get_tailored_cv`. | `models/tailoring.py`, `renderers.py`, `tools/data.py`, `templates/cv_tailored.{tex,typ}.j2` |
+| Semantic enrichment | Topic taxonomy, cross-entry relationships and skill proficiency layered over the structured resume, surfaced through the query tools and through enriched markdown, HTML and Typst renders. | `models/semantics.py`, `store.py`, `tools/semantic.py` |
+
+<!-- aac:end -->
+
+## 4. Interfaces
+
+| Interface | Type | Provider | Consumer(s) | Contract |
+|-----------|------|----------|-------------|----------|
+| `fps-cv://*` | MCP resources | mcp | MCP clients | 17 URIs: rendered output (`pdf`, `md`, `md/sections{,/{name}}`, `latex`, `html`, `typst`), structured JSON (`resume`, `resume/entry/{id}`, `semantics`, `semantics/{entry_id}`, `taxonomy`), introspection (`schema/resume`, `schema/semantics`, `templates`, `templates/{format_id}`) and `links/{name}` |
+| MCP tools | MCP tools | mcp | MCP clients | 16 tools: `get_cv`, `get_cv_sections`, `list_cv_sections`, `get_link`, `list_links`, `get_cv_pdf_link`, `get_google_scholar_link`, `get_tailored_cv`, `query_work`, `get_entry`, `list_entry_ids`, `query_by_topic`, `get_relationships`, `get_skill_profile`, `get_entry_context`, `summarize_cv` |
+| `ResumeStore` | Python API | data-store | render, mcp, cli | `ResumeStore.load(data_dir)` plus read-only query methods and a semantics-persistence path |
+| `render_*` | Python API | render | mcp, cli | `render_markdown`, `render_latex`, `render_html`, `render_typst`, `render_tailored_latex`, `render_tailored_typst`, `render_sections`, `get_section`, `section_names` — all take a store and return a string |
+| `CV_DATA_DIR` | Environment variable | data-store | deployment, tests | Overrides the default `<project-root>/cv-data` location of the YAML files |
+| `TRANSPORT` | Environment variable | mcp | deployment | `stdio` (default) or `streamable-http` (sets `stateless_http=True`); `sse` raises, it is deprecated |
+| Plugin MCP declaration | JSON | cv plugin | Claude Code | `.claude-plugin/plugin.json` declares `fps_cv_mcp`; `.claude-plugin/mcp-local.json` is the stdio dev override injected by `make install-claude-code` |
+
+## 5. Data Flow
+
+Data flows are diagrammed in [`.ai-state/DESIGN.md` §5](../.ai-state/DESIGN.md#5-data-flow), which describes the **target** flow (release-sourced, refreshed in the background).
+
+To trace the **current** flow, start at `src/cv_mcp_server/server.py`: it resolves `DATA_DIR` (from `CV_DATA_DIR`, else by walking up to the directory containing `pyproject.toml`) and calls `ResumeStore.load(DATA_DIR)` **at module import time**, so the store is a module-level singleton every tool and resource imports directly. `main.py::_register_modules()` then walks `cv_mcp_server.tools` with `pkgutil` and imports `resources`, which is what activates the `@mcp.tool` and `@mcp.resource` decorators — adding a new tool module requires no edit to `main.py`.
+
+## 6. Dependencies
+
+External dependencies, versions, and criticality classifications are listed in [`.ai-state/DESIGN.md` §6](../.ai-state/DESIGN.md#6-dependencies), which records the **target** versions. The currently declared runtime set in `pyproject.toml` is `mcp[cli]>=1.9.2,<2`, `loguru>=0.7.3,<0.8`, `pyyaml>=6.0,<7.0` and `jinja2>=3.1,<4`; `pydantic` is used directly throughout `models/` but arrives transitively through `mcp[cli]` rather than being declared.
+
+## 7. Constraints
+
+System constraints (performance, compatibility, technical, security) are listed in [`.ai-state/DESIGN.md` §7](../.ai-state/DESIGN.md#7-constraints). The ones that bind day-to-day development here:
+
+- Run tests with `pixi run -e dev python -m pytest` — the `-e dev` flag matters, because a `pyenv` shim can intercept a bare `pytest`.
+- `{% raw %}` blocks in the LaTeX and Typst templates protect native syntax from Jinja2 and process independently inside `{% include %}`. LaTeX commands containing `{#N}` must be inside a raw block, because `{#` opens a Jinja2 comment.
+- `_template_context()` passes `enrich=False` for every LaTeX render; semantic enrichment applies to markdown, HTML and Typst only.
+
+## 8. Decisions
+
+<!-- aac:authored owner=systems-architect last-reviewed=2026-09-13 -->
+
+Architectural decisions are recorded as ADRs in [`.ai-state/decisions/`](../.ai-state/decisions/). The canonical, auto-generated cross-reference is `DECISIONS_INDEX.md`, regenerated at finalize; in-flight fragments live under [`decisions/drafts/`](../.ai-state/decisions/drafts/). For design-target rationale, see [`.ai-state/DESIGN.md`](../.ai-state/DESIGN.md) — this developer guide intentionally does not summarize decisions inline.
+
+<!-- aac:end -->

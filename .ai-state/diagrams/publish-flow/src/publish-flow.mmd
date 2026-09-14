@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant M as Maintainer
+    participant CV as cv repo
+    participant W as cv-forge publish.yml at v1
+    participant R as cv GitHub Release
+    participant S as Wasmer static site
+
+    M->>CV: git tag 2026.09.13 and push
+    CV->>W: workflow_call (ref, formats, deploy-site, WASMER_TOKEN)
+    W->>W: checkout cv at tag and cv-forge at v1
+    W->>W: pixi install, TinyTeX, typst
+    W->>W: cv-forge render tex, md, html, typst then compile PDF
+    W->>W: build release.json (tag, sha256 per asset, cv_forge_version)
+    W->>R: gh release create or upload --clobber, mark latest
+    W->>S: wasmer deploy public/index.html
+    W->>S: GET / and assert 200 with tag present
+    W-->>M: green only if the live site answered

@@ -1,0 +1,35 @@
+direction: down
+
+Maintainer: {
+  label: "Maintainer"
+}
+Consumer: {
+  label: "CV consumer"
+}
+CvRepo: {
+  label: "cv (data repo)"
+}
+Marketplace: {
+  label: "bit-agora marketplace"
+}
+CvForge: {
+  label: "cv-forge (machinery repo)"
+}
+Wasmer: {
+  label: "Wasmer Edge"
+}
+Releases: {
+  label: "cv GitHub Releases"
+  shape: cylinder
+}
+
+Maintainer -> CvRepo: "edits YAML via PR, pushes CalVer tags"
+Maintainer -> CvForge: "develops machinery, deploys"
+CvRepo -> CvForge: "calls publish.yml@v1; pulls mirrored \nschemas"
+CvRepo -> Releases: "publishes assets on tag"
+CvForge -> Releases: "[...]"
+Consumer -> Wasmer: "calls MCP tools, reads the CV page"
+CvForge -> Wasmer: "deploys MCP app and static site"
+Wasmer -> Releases: "fetches release.json, YAML and PDF at \nruntime"
+Consumer -> Marketplace: "installs the cv plugin"
+Marketplace -> CvForge: "sources plugins from plugins/ at ref v1"

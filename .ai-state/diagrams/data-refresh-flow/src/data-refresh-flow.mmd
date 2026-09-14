@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant L as ASGI lifespan
+    participant P as CvDataProvider
+    participant G as cv GitHub Releases
+    participant C as MCP client
+
+    L->>L: load baked snapshot from image
+    L->>P: construct with non-optional initial snapshot
+    L-->>C: accepting requests (never blocked on network)
+    L->>P: spawn refresh loop (15 min)
+
+    P->>G: GET releases/latest/download/release.json
+    G-->>P: tag + asset table
+    alt tag differs from current snapshot
+        P->>G: GET resume.yaml and resume-semantics.yaml
+        P->>P: parse, build snapshot, atomic swap, state Fresh
+    else tag unchanged
+        P->>P: state Fresh, no further fetch
+    end
+
+    C->>P: get_cv(format=markdown)
+    P-->>C: rendered in-process from the snapshot
+
+    C->>P: get_cv(format=pdf)
+    P->>G: GET CV pdf asset (lazy, cached by tag)
+    G-->>C: base64 blob or ArtifactUnavailable with URL

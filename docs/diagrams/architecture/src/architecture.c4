@@ -1,0 +1,83 @@
+// Developer-facing architecture model — only components that exist on disk today.
+// The design-target model (including planned components) lives at
+// .ai-state/diagrams/architecture/src/architecture.c4.
+//
+// Regenerate with the pre-commit diagram-regen hook, or:
+//   likec4 gen d2 docs/diagrams/architecture/src -o docs/diagrams/architecture/rendered/
+//   d2 docs/diagrams/architecture/rendered/context.d2    docs/diagrams/architecture/rendered/context.svg
+//   d2 docs/diagrams/architecture/rendered/components.d2 docs/diagrams/architecture/rendered/components.svg
+
+specification {
+  element person
+  element system
+  element component
+  element datastore {
+    style { shape cylinder }
+  }
+}
+
+model {
+  client = person "MCP client" {
+    description "Claude Code or Claude Desktop calling tools and reading resources"
+  }
+  developer = person "Developer" {
+    description "Runs the renderer locally and works on the server"
+  }
+
+  cvData = datastore "cv-data/" {
+    description "resume.yaml and resume-semantics.yaml, located via CV_DATA_DIR or the project root"
+  }
+
+  server = system "cv_mcp_server" {
+    description "Python package serving the CV over MCP and rendering it to four formats"
+
+    models = component "models" {
+      description "Pydantic Resume, SemanticOverlay and TailoringSpec definitions"
+      technology "pydantic"
+    }
+    store = component "data-store" {
+      description "ResumeStore — loads both YAML files, validates cross-references, and answers entry and topic queries"
+    }
+    render = component "render" {
+      description "Jinja2 renderers and templates for markdown, LaTeX, HTML and Typst, full and tailored"
+      technology "jinja2"
+    }
+    mcpSurface = component "mcp" {
+      description "FastMCP instance, 17 fps-cv:// resources and 16 tools across data, query, semantic and summarize modules"
+      technology "mcp 1.x"
+    }
+    cli = component "cli" {
+      description "scripts/render_cv.py — renders a chosen format, optionally compiling LaTeX to PDF"
+    }
+  }
+
+  pluginCv = system "cv plugin" {
+    description "Claude Code plugin declaring the remote MCP server and shipping the cv-analyst and cv-tailoring skills"
+  }
+
+  client -> server.mcpSurface "tools/list, tools/call, resources/read"
+  client -> pluginCv "installs"
+  pluginCv -> server.mcpSurface "declares the deployed endpoint"
+  developer -> server.cli "renders locally"
+
+  server.store -> cvData "reads at import time"
+  server.store -> server.models "validates into"
+  server.render -> server.store "reads"
+  server.mcpSurface -> server.store "reads"
+  server.mcpSurface -> server.render "renders"
+  server.cli -> server.store "loads"
+  server.cli -> server.render "writes output"
+}
+
+views {
+  view context {
+    title "System Context (L0) — as built"
+    include client, developer, server, pluginCv, cvData
+  }
+
+  view components of server {
+    title "cv_mcp_server Components (L1) — as built"
+    include *
+    include cvData
+  }
+}

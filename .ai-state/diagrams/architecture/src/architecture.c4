@@ -1,0 +1,119 @@
+// cv-forge architecture model — L0 context and L1 components.
+// Regenerate renders with scripts/diagram-regen-hook.sh (pre-commit) or:
+//   likec4 gen d2 .ai-state/diagrams/architecture/src -o .ai-state/diagrams/architecture/rendered/
+//   d2 .ai-state/diagrams/architecture/rendered/<view>.d2 .ai-state/diagrams/architecture/rendered/<view>.svg
+
+specification {
+  element person
+  element system
+  element component
+  element datastore {
+    style { shape cylinder }
+  }
+}
+
+model {
+  maintainer = person "Maintainer" {
+    description "Edits CV content, publishes releases, deploys the server"
+  }
+  consumer = person "CV consumer" {
+    description "Reads, summarises or tailors the CV through Claude Code, Claude Desktop or a browser"
+  }
+
+  cvRepo = system "cv (data repo)" {
+    description "GitHub repo holding resume.yaml, resume-semantics.yaml, mirrored JSON Schemas and two thin workflows"
+  }
+
+  releases = datastore "cv GitHub Releases" {
+    description "CalVer-tagged releases carrying eight stable-named assets plus release.json"
+  }
+
+  wasmer = system "Wasmer Edge" {
+    description "Hosts the MCP server app (fps-cv-mcp) and the static CV site (fps-cv)"
+  }
+
+  cvForge = system "cv-forge (machinery repo)" {
+    description "Models, renderer, CLI, MCP server, publish workflow and two Claude Code plugins"
+
+    models = component "models" {
+      description "Pydantic Resume, SemanticOverlay and TailoringSpec — the shape of the data. No I/O."
+      technology "pydantic"
+    }
+    render = component "render" {
+      description "Jinja2 renderers and templates for markdown, LaTeX, HTML and Typst. Pure functions of a store."
+      technology "jinja2"
+    }
+    dataStore = component "data-store" {
+      description "ResumeStore — read-only query layer over a parsed Resume and SemanticOverlay. No I/O."
+    }
+    dataSource = component "data-source" {
+      description "CvDataSnapshot, CvDataProvider, ReleaseFetcher, ArtifactCache, load_local_dir — the only code that knows about paths or the network."
+      technology "httpx"
+    }
+    mcpSurface = component "mcp" {
+      description "MCPServer construction, ASGI app and lifespan, 17 fps-cv:// resources, 16 tools, /healthz."
+      technology "mcp 2.2"
+    }
+    cli = component "cli" {
+      description "cv-forge console script: render, validate, export-schemas, fetch-snapshot."
+    }
+    schemas = component "schemas" {
+      description "Generated JSON Schemas, committed and drift-checked. Source of truth mirrored into cv."
+    }
+    publishWorkflow = component "publish.yml" {
+      description "Reusable workflow_call pipeline: render every format, attach release assets, deploy the static site."
+      technology "GitHub Actions"
+    }
+    pluginCv = component "plugins/cv" {
+      description "Consumer plugin: native http MCP declaration plus cv-analyst and cv-tailoring skills."
+    }
+    pluginForge = component "plugins/cv-forge" {
+      description "Maintainer plugin: cv-data-edit, cv-publish and cv-forge-deploy skills."
+    }
+  }
+
+  marketplace = system "bit-agora marketplace" {
+    description "Claude Code plugin marketplace listing both plugins by git-subdir source pinned to v1"
+  }
+
+  // --- context relations ---
+  maintainer -> cvRepo "edits YAML via PR, pushes CalVer tags"
+  maintainer -> cvForge "develops machinery, deploys"
+  consumer -> wasmer "calls MCP tools, reads the CV page"
+  consumer -> marketplace "installs the cv plugin"
+  cvRepo -> cvForge "calls publish.yml@v1; pulls mirrored schemas"
+  cvRepo -> releases "publishes assets on tag"
+  cvForge -> wasmer "deploys MCP app and static site"
+  wasmer -> releases "fetches release.json, YAML and PDF at runtime"
+  marketplace -> cvForge "sources plugins from plugins/ at ref v1"
+
+  // --- component relations ---
+  cvForge.dataSource -> cvForge.models "parses bytes into validated models"
+  cvForge.dataSource -> cvForge.dataStore "builds a store per snapshot"
+  cvForge.dataStore -> cvForge.models "queries"
+  cvForge.render -> cvForge.dataStore "reads"
+  cvForge.mcpSurface -> cvForge.dataSource "reads the current snapshot per call"
+  cvForge.mcpSurface -> cvForge.render "renders markdown, LaTeX, HTML, Typst"
+  cvForge.cli -> cvForge.dataSource "loads a local directory"
+  cvForge.cli -> cvForge.render "writes rendered output"
+  cvForge.cli -> cvForge.schemas "exports from the models"
+  cvForge.schemas -> cvForge.models "generated from"
+  cvForge.publishWorkflow -> cvForge.cli "invokes cv-forge render"
+  cvForge.pluginForge -> cvForge.cli "drives local preview and validation"
+  cvForge.pluginCv -> cvForge.mcpSurface "declares the deployed endpoint"
+  cvForge.dataSource -> releases "fetches release.json, YAML, PDF"
+  cvForge.publishWorkflow -> releases "uploads eight assets"
+}
+
+views {
+  view context {
+    title "System Context (L0)"
+    include maintainer, consumer, cvRepo, cvForge, releases, wasmer, marketplace
+  }
+
+  view components of cvForge {
+    title "cv-forge Components (L1)"
+    include *
+    include releases
+  }
+}

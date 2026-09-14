@@ -1,0 +1,45 @@
+direction: down
+
+Client: {
+  label: "MCP client"
+}
+Developer: {
+  label: "Developer"
+}
+PluginCv: {
+  label: "cv plugin"
+}
+Server: {
+  label: "cv_mcp_server"
+
+  McpSurface: {
+    label: "mcp"
+  }
+  Cli: {
+    label: "cli"
+  }
+  Render: {
+    label: "render"
+  }
+  Store: {
+    label: "data-store"
+  }
+  Models: {
+    label: "models"
+  }
+}
+CvData: {
+  label: "cv-data/"
+  shape: cylinder
+}
+
+Client -> Server.McpSurface: "tools/list, tools/call, resources/read"
+Developer -> Server.Cli: "renders locally"
+PluginCv -> Server.McpSurface: "declares the deployed endpoint"
+Server.Store -> Server.Models: "validates into"
+Server.Render -> Server.Store: "reads"
+Server.McpSurface -> Server.Store: "reads"
+Server.Cli -> Server.Store: "loads"
+Server.McpSurface -> Server.Render: "renders"
+Server.Cli -> Server.Render: "writes output"
+Server.Store -> CvData: "reads at import time"

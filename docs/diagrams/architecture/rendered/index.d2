@@ -1,0 +1,24 @@
+direction: down
+
+Client: {
+  label: "MCP client"
+}
+Developer: {
+  label: "Developer"
+}
+PluginCv: {
+  label: "cv plugin"
+}
+Server: {
+  label: "cv_mcp_server"
+}
+CvData: {
+  label: "cv-data/"
+  shape: cylinder
+}
+
+Client -> Server: "tools/list, tools/call, resources/read"
+Client -> PluginCv: "installs"
+Developer -> Server: "renders locally"
+Server -> CvData: "reads at import time"
+PluginCv -> Server: "declares the deployed endpoint"

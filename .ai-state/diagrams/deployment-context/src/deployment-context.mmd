@@ -1,0 +1,19 @@
+graph LR
+    Consumer[CV consumer<br/>Claude Code / Desktop / browser]
+    Maintainer[Maintainer]
+
+    subgraph Deployed[" Deployed surface "]
+        MCPApp[fps-cv-mcp<br/>Wasmer Edge WASIX app]
+        Site[fps-cv<br/>Wasmer static site]
+    end
+
+    Releases[(cv GitHub Releases<br/>8 assets + release.json)]
+    Actions[GitHub Actions<br/>cv-forge publish.yml]
+
+    Consumer -->|MCP over HTTPS| MCPApp
+    Consumer -->|HTTPS| Site
+    Maintainer -->|git tag push| Actions
+    Actions -->|upload assets| Releases
+    Actions -->|wasmer deploy| Site
+    MCPApp -.->|fetch release.json, YAML, PDF| Releases
+    Maintainer -->|scripts/deploy.sh| MCPApp

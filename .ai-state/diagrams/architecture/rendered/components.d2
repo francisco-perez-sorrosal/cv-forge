@@ -1,0 +1,56 @@
+direction: down
+
+CvForge: {
+  label: "cv-forge (machinery repo)"
+
+  PluginCv: {
+    label: "plugins/cv"
+  }
+  PublishWorkflow: {
+    label: "publish.yml"
+  }
+  PluginForge: {
+    label: "plugins/cv-forge"
+  }
+  McpSurface: {
+    label: "mcp"
+  }
+  Cli: {
+    label: "cli"
+  }
+  Render: {
+    label: "render"
+  }
+  DataSource: {
+    label: "data-source"
+  }
+  Schemas: {
+    label: "schemas"
+  }
+  DataStore: {
+    label: "data-store"
+  }
+  Models: {
+    label: "models"
+  }
+}
+Releases: {
+  label: "cv GitHub Releases"
+  shape: cylinder
+}
+
+CvForge.DataStore -> CvForge.Models: "queries"
+CvForge.DataSource -> CvForge.Models: "parses bytes into validated models"
+CvForge.Schemas -> CvForge.Models: "generated from"
+CvForge.Render -> CvForge.DataStore: "reads"
+CvForge.McpSurface -> CvForge.Render: "renders markdown, LaTeX, HTML, Typst"
+CvForge.Cli -> CvForge.Render: "writes rendered output"
+CvForge.DataSource -> CvForge.DataStore: "builds a store per snapshot"
+CvForge.McpSurface -> CvForge.DataSource: "reads the current snapshot per call"
+CvForge.Cli -> CvForge.DataSource: "loads a local directory"
+CvForge.PluginCv -> CvForge.McpSurface: "declares the deployed endpoint"
+CvForge.Cli -> CvForge.Schemas: "exports from the models"
+CvForge.PublishWorkflow -> CvForge.Cli: "invokes cv-forge render"
+CvForge.PluginForge -> CvForge.Cli: "drives local preview and validation"
+CvForge.DataSource -> Releases: "fetches release.json, YAML, PDF"
+CvForge.PublishWorkflow -> Releases: "uploads eight assets"

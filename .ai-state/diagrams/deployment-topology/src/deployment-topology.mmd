@@ -1,0 +1,20 @@
+graph TD
+    subgraph Wasmer[" Wasmer Edge (owner: francisco-perez-sorrosal) "]
+        subgraph AppMCP[" App: fps-cv-mcp "]
+            Runtime[WASIX CPython 3.13<br/>uvicorn + mcp 2.2 MCPServer]
+            Baked[(baked snapshot<br/>staged at deploy)]
+            Runtime --- Baked
+        end
+        subgraph AppSite[" App: fps-cv "]
+            SWS[wasmer/static-web-server<br/>public/index.html]
+        end
+    end
+
+    Releases[(GitHub Releases on cv)]
+    Health[/healthz — 200 only with a validated snapshot/]
+
+    Runtime -->|POST /mcp stateless streamable HTTP| Clients[MCP clients]
+    Runtime --> Health
+    Runtime -.->|every 15 min: release.json| Releases
+    Runtime -.->|lazy, cached by tag: PDF| Releases
+    SWS -->|GET /| Browsers[Browsers]

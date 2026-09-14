@@ -1,0 +1,12 @@
+graph TD
+    Start[Clean cv-forge working tree] --> Check{wasmer CLI >= 7.0?}
+    Check -->|no| Abort[Abort with version reason]
+    Check -->|yes| Stage[Stage git ls-files into temp dir]
+    Stage --> Snap[Materialise fallback snapshot from latest cv release]
+    Snap --> Build[anybuild --platform=wasmer from staging dir]
+    Build --> Deploy[wasmer deploy fps-cv-mcp]
+    Deploy --> Poke{GET /healthz returns 200?}
+    Poke -->|no| Rollback[wasmer app rollback to previous version]
+    Poke -->|yes| Tools{POST /mcp tools/list returns tools?}
+    Tools -->|no| Rollback
+    Tools -->|yes| Done[Report served release tag and origin]
