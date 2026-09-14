@@ -5,10 +5,12 @@ import json
 from typing import Literal
 
 from loguru import logger
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import BlobResourceContents, EmbeddedResource
 from pydantic import Field
 
-from cv_forge.mcp.server import CV_PATH, mcp, store
+from cv_forge.data.release import ArtifactUnavailable, format_unavailable
+from cv_forge.mcp.server import READ_ONLY_TOOL, get_provider, get_store, mcp
 from cv_forge.models import TailoringSpec
 from cv_forge.render.renderers import (
     get_section,
@@ -24,9 +26,13 @@ from cv_forge.render.renderers import (
     section_names as list_section_names,
 )
 
+_PDF_ALTERNATIVES = (
+    'Alternatives: get_cv_pdf_link(), get_cv(format="latex"), get_cv(format="typst").'
+)
 
-@mcp.tool()
-def get_cv(
+
+@mcp.tool(annotations=READ_ONLY_TOOL)
+async def get_cv(
     format: Literal["markdown", "pdf", "latex", "html", "typst"] = Field(
         default="markdown",
         description=(
@@ -54,9 +60,14 @@ def get_cv(
     format='html': self-contained interactive HTML with theme switching and expandable cards.
     format='typst': full CV as Typst source (moderner-cv package) for typeset PDF generation.
     """
+    store = get_store()
     if format == "pdf":
-        logger.debug("Returning the CV as PDF binary...")
-        pdf_data = CV_PATH.read_bytes() if CV_PATH.exists() else b""
+        logger.debug("Fetching the CV as PDF binary...")
+        pdf_data = await get_provider().fetch_pdf()
+        if isinstance(pdf_data, ArtifactUnavailable):
+            raise ToolError(
+                format_unavailable(pdf_data, alternatives=_PDF_ALTERNATIVES)
+            )
         return [
             EmbeddedResource(
                 type="resource",
@@ -80,7 +91,7 @@ def get_cv(
     return render_markdown(store, enrich=enrich)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def get_tailored_cv(
     tailoring_config: str = Field(
         description=(
@@ -100,6 +111,7 @@ def get_tailored_cv(
     and profile override. Returns compilable source code.
     Use this tool after analyzing a job description to produce a targeted CV.
     """
+    store = get_store()
     try:
         spec = TailoringSpec.model_validate_json(tailoring_config)
     except Exception as exc:
@@ -111,13 +123,14 @@ def get_tailored_cv(
     return render_tailored_latex(store, spec)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def get_link(
     name: str = Field(
         description="Network name (e.g. 'LinkedIn', 'GitHub', 'Google Scholar', 'Twitter', 'CV PDF'). Use list_links() to see all available."
     ),
 ) -> str:
     """Return a profile or document link by network name."""
+    store = get_store()
     name_lower = name.lower()
     for profile in store.resume.personal_info.profiles:
         if profile.network.lower() == name_lower:
@@ -126,15 +139,16 @@ def get_link(
     return f"Link '{name}' not found. Available: {available}"
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def list_links() -> str:
     """List all available profile and document links."""
+    store = get_store()
     return "\n".join(
         f"- {p.network}: {p.url}" for p in store.resume.personal_info.profiles if p.url
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def get_cv_sections(
     section_names: list[str] = Field(
         description="One or more section names to retrieve (case-insensitive, '&' ignored). "
@@ -150,6 +164,7 @@ def get_cv_sections(
     Accepts a list of section names. Returns all matched sections separated by blank lines.
     Reports any unrecognized names with the list of available sections.
     """
+    store = get_store()
     results = []
     missing = []
     for name in section_names:
@@ -167,12 +182,13 @@ def get_cv_sections(
     return output
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def list_cv_sections() -> str:
     """List available CV section names with approximate line counts.
 
     Helps AI assistants pick the right section for targeted queries.
     """
+    store = get_store()
     lines = []
     for name, content in render_sections(store).items():
         line_count = content.count("\n") + 1
@@ -180,18 +196,20 @@ def list_cv_sections() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def get_cv_pdf_link() -> str:
     """Return the direct link to the PDF version of the CV."""
+    store = get_store()
     for p in store.resume.personal_info.profiles:
         if p.network.lower() == "cv pdf":
             return p.url
     return store.resume.meta.canonical or "PDF link not available."
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def get_google_scholar_link() -> str:
     """Return the Google Scholar profile link."""
+    store = get_store()
     for p in store.resume.personal_info.profiles:
         if p.network.lower() == "google scholar":
             return p.url

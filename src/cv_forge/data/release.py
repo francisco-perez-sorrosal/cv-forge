@@ -1,8 +1,9 @@
-"""Release wire-format types for the `cv` <-> `cv-forge` contract.
+"""Release wire-format types and fetcher for the `cv` <-> `cv-forge` contract.
 
-Pure data shapes for `release.json` and the compiled artifacts it describes.
-No network code lives here -- fetching is `ReleaseFetcher`'s job (a later
-step); this module only defines what a fetch produces or fails with.
+Pure data shapes for `release.json` and the compiled artifacts it describes,
+plus `GitHubReleaseFetcher` -- the one piece of network code in this module,
+satisfying the `ReleaseFetcher` Protocol (`cv_forge.data.provider`) against a
+`cv` GitHub Release's stable `releases/latest/download/<name>` URLs.
 
 `ReleaseManifest`, `AssetEntry` and `ArtifactUnavailable` are Pydantic
 models -- the same boundary-parsing pattern already used for `Resume` and
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+import httpx2
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -89,3 +91,100 @@ class ArtifactUnavailable(BaseModel):
     tag: str | None
     download_url: str
     reason: UnavailableReason
+
+
+def format_unavailable(
+    unavailable: ArtifactUnavailable, *, alternatives: str = ""
+) -> str:
+    """Render an `ArtifactUnavailable` as the entire client-visible signal.
+
+    A tool error's text has no separate structured channel a naive client
+    reads, so the reason and the direct download URL both have to survive as
+    plain text -- this is the one place that formatting happens, shared by
+    the `get_cv(format="pdf")` tool error and the `fps-cv://pdf` resource's
+    JSON-RPC error.
+    """
+    message = (
+        f"artifact_unavailable: {unavailable.name} could not be fetched "
+        f"(reason: {unavailable.reason}). Download directly: {unavailable.download_url}."
+    )
+    return f"{message} {alternatives}".rstrip() if alternatives else message
+
+
+RELEASE_MANIFEST_ASSET = "release.json"
+PDF_ASSET_NAME = "FranciscoPerezSorrosal_CV.pdf"
+DEFAULT_CV_REPO = "francisco-perez-sorrosal/cv"
+DEFAULT_RELEASES_URL = f"https://github.com/{DEFAULT_CV_REPO}/releases/latest"
+DEFAULT_FETCH_TIMEOUT_SECONDS = 10.0
+
+
+class GitHubReleaseFetcher:
+    """`ReleaseFetcher` backed by a `cv` GitHub Release's stable
+    `releases/latest/download/<name>` URLs.
+
+    No GitHub API calls and no auth -- these are CDN-served redirects to the
+    latest release's assets, not `api.github.com` requests, so the refresh
+    loop's steady-state budget (one manifest fetch per interval) never
+    touches GitHub's unauthenticated rate limit.
+    """
+
+    def __init__(
+        self, repo: str, *, timeout: float = DEFAULT_FETCH_TIMEOUT_SECONDS
+    ) -> None:
+        self._repo = repo
+        self._timeout = timeout
+
+    def download_url(self, name: str) -> str:
+        return f"https://github.com/{self._repo}/releases/latest/download/{name}"
+
+    async def fetch_manifest(self) -> ReleaseManifest | ArtifactUnavailable:
+        data = await self._fetch_bytes(RELEASE_MANIFEST_ASSET)
+        if isinstance(data, ArtifactUnavailable):
+            return data
+        try:
+            return ReleaseManifest.model_validate_json(data)
+        except ValueError:
+            return ArtifactUnavailable(
+                name=RELEASE_MANIFEST_ASSET,
+                tag=None,
+                download_url=self.download_url(RELEASE_MANIFEST_ASSET),
+                reason=UnavailableReason.HTTP_ERROR,
+            )
+
+    async def fetch_asset(self, name: str) -> bytes | ArtifactUnavailable:
+        return await self._fetch_bytes(name)
+
+    async def _fetch_bytes(self, name: str) -> bytes | ArtifactUnavailable:
+        url = self.download_url(name)
+        try:
+            async with httpx2.AsyncClient(
+                timeout=self._timeout, follow_redirects=True
+            ) as client:
+                response = await client.get(url)
+        except httpx2.TimeoutException:
+            return ArtifactUnavailable(
+                name=name, tag=None, download_url=url, reason=UnavailableReason.TIMEOUT
+            )
+        except httpx2.HTTPError:
+            return ArtifactUnavailable(
+                name=name,
+                tag=None,
+                download_url=url,
+                reason=UnavailableReason.HTTP_ERROR,
+            )
+
+        if response.status_code == 404:
+            return ArtifactUnavailable(
+                name=name,
+                tag=None,
+                download_url=url,
+                reason=UnavailableReason.NO_RELEASE,
+            )
+        if response.status_code >= 400:
+            return ArtifactUnavailable(
+                name=name,
+                tag=None,
+                download_url=url,
+                reason=UnavailableReason.HTTP_ERROR,
+            )
+        return response.content

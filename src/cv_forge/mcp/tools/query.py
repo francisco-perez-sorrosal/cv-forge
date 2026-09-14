@@ -4,12 +4,13 @@ import json
 
 from pydantic import BaseModel, Field
 
-from cv_forge.mcp.server import mcp, store
+from cv_forge.mcp.server import READ_ONLY_TOOL, get_store, mcp
 from cv_forge.render.renderers import render_work_entry
 
 
 @mcp.tool(
-    description="Filter work entries by company, date range, or topic. Returns matching entries as markdown."
+    description="Filter work entries by company, date range, or topic. Returns matching entries as markdown.",
+    annotations=READ_ONLY_TOOL,
 )
 def query_work(
     company: str = "",
@@ -22,6 +23,7 @@ def query_work(
     ),
 ) -> str:
     """Filter work entries by company, date range, or topic. Returns matching entries as markdown."""
+    store = get_store()
     results = list(store.resume.work)
 
     if company:
@@ -60,9 +62,11 @@ def query_work(
 
 
 @mcp.tool(
-    description="Retrieve a specific resume entry by its stable ID. Returns JSON representation."
+    description="Retrieve a specific resume entry by its stable ID. Returns JSON representation.",
+    annotations=READ_ONLY_TOOL,
 )
 def get_entry(entry_id: str) -> str:
+    store = get_store()
     entry = store.entry_by_id(entry_id)
     if entry is None:
         return f"Entry '{entry_id}' not found."
@@ -72,9 +76,11 @@ def get_entry(entry_id: str) -> str:
 
 
 @mcp.tool(
-    description="List all entry IDs with labels, optionally filtered by section type (work, patents, publications, education, certificates, conferences, memberships, skills, book_reviews)."
+    description="List all entry IDs with labels, optionally filtered by section type (work, patents, publications, education, certificates, conferences, memberships, skills, book_reviews).",
+    annotations=READ_ONLY_TOOL,
 )
 def list_entry_ids(section: str = "") -> str:
+    store = get_store()
     lines = []
     r = store.resume
 

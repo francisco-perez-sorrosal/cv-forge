@@ -2,9 +2,11 @@
 
 import json
 
+from mcp.server.mcpserver.exceptions import ResourceError
 from pydantic import BaseModel
 
-from cv_forge.mcp.server import CV_PATH, mcp, store
+from cv_forge.data.release import ArtifactUnavailable, format_unavailable
+from cv_forge.mcp.server import get_provider, get_store, mcp
 from cv_forge.models import Resume, SemanticOverlay
 from cv_forge.render.renderers import (
     TEMPLATES_DIR,
@@ -23,22 +25,29 @@ from cv_forge.render.renderers import (
 
 
 @mcp.resource("fps-cv://pdf")
-def cv_pdf() -> bytes:
-    """Return the full CV as the original PDF binary."""
-    if not CV_PATH.exists():
-        return b""
-    return CV_PATH.read_bytes()
+async def cv_pdf() -> bytes:
+    """Return the full CV as the original PDF binary.
+
+    Raises `ResourceError` naming the direct download URL when the compiled
+    PDF cannot be fetched -- a resource has no `isError` channel, so a
+    JSON-RPC error is the only way to carry the reason.
+    """
+    pdf_data = await get_provider().fetch_pdf()
+    if isinstance(pdf_data, ArtifactUnavailable):
+        raise ResourceError(format_unavailable(pdf_data))
+    return pdf_data
 
 
 @mcp.resource("fps-cv://md")
 def cv_md() -> str:
     """Return the full CV as markdown."""
-    return render_markdown(store)
+    return render_markdown(get_store())
 
 
 @mcp.resource("fps-cv://md/sections")
 def cv_sections_index() -> str:
     """Return available CV section names with approximate line counts."""
+    store = get_store()
     lines = []
     for name, content in render_sections(store).items():
         line_count = content.count("\n") + 1
@@ -49,6 +58,7 @@ def cv_sections_index() -> str:
 @mcp.resource("fps-cv://md/sections/{name}")
 def cv_section(name: str) -> str:
     """Return a single CV section by name."""
+    store = get_store()
     content = get_section(store, name)
     if content is not None:
         return content
@@ -59,19 +69,19 @@ def cv_section(name: str) -> str:
 @mcp.resource("fps-cv://latex")
 def cv_latex() -> str:
     """Return the full CV as LaTeX source (moderncv package)."""
-    return render_latex(store)
+    return render_latex(get_store())
 
 
 @mcp.resource("fps-cv://html")
 def cv_html() -> str:
     """Return the full CV as self-contained interactive HTML."""
-    return render_html(store)
+    return render_html(get_store())
 
 
 @mcp.resource("fps-cv://typst")
 def cv_typst() -> str:
     """Return the full CV as Typst source (moderner-cv package)."""
-    return render_typst(store)
+    return render_typst(get_store())
 
 
 # --- Structured data (JSON) ---
@@ -80,13 +90,14 @@ def cv_typst() -> str:
 @mcp.resource("fps-cv://resume")
 def resume_json() -> str:
     """Return the full resume data as JSON."""
+    store = get_store()
     return json.dumps(store.resume.model_dump(by_alias=True), indent=2, default=str)
 
 
 @mcp.resource("fps-cv://resume/entry/{entry_id}")
 def entry_json(entry_id: str) -> str:
     """Return a specific resume entry as JSON."""
-    entry = store.entry_by_id(entry_id)
+    entry = get_store().entry_by_id(entry_id)
     if entry is None:
         return json.dumps({"error": f"Entry '{entry_id}' not found"})
     if isinstance(entry, BaseModel):
@@ -97,13 +108,14 @@ def entry_json(entry_id: str) -> str:
 @mcp.resource("fps-cv://semantics")
 def semantics_json() -> str:
     """Return the full semantic overlay data as JSON."""
+    store = get_store()
     return json.dumps(store.semantics.model_dump(by_alias=True), indent=2, default=str)
 
 
 @mcp.resource("fps-cv://semantics/{entry_id}")
 def entry_semantics_json(entry_id: str) -> str:
     """Return semantic annotations for a specific entry as JSON."""
-    ann = store.semantics.annotations_for(entry_id)
+    ann = get_store().semantics.annotations_for(entry_id)
     if ann is None:
         return json.dumps({"error": f"No annotations for '{entry_id}'"})
     return json.dumps(ann.model_dump(by_alias=True), indent=2, default=str)
@@ -113,7 +125,7 @@ def entry_semantics_json(entry_id: str) -> str:
 def taxonomy_json() -> str:
     """Return the topic taxonomy as JSON."""
     return json.dumps(
-        store.semantics.taxonomy.model_dump(by_alias=True), indent=2, default=str
+        get_store().semantics.taxonomy.model_dump(by_alias=True), indent=2, default=str
     )
 
 
@@ -123,6 +135,7 @@ def taxonomy_json() -> str:
 @mcp.resource("fps-cv://links/{name}")
 def cv_link(name: str) -> str:
     """Return a profile or document link by network name."""
+    store = get_store()
     name_lower = name.lower()
     for profile in store.resume.personal_info.profiles:
         if profile.network.lower() == name_lower:

@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from cv_forge.mcp.server import mcp
+from cv_forge.mcp.server import READ_ONLY_TOOL, mcp
 from cv_forge.utils import load_prompt
 
 
@@ -38,7 +38,7 @@ def summary(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 def summarize_cv(
     depth_level: str = Field(
         default="comprehensive",

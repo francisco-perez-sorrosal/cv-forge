@@ -1,12 +1,14 @@
 """Semantic query tools: topic-based lookups, relationships, skill profiles."""
 
-from cv_forge.mcp.server import mcp, store
+from cv_forge.mcp.server import READ_ONLY_TOOL, get_store, mcp
 
 
 @mcp.tool(
-    description="Find resume entries annotated with a topic. Returns entry IDs with labels."
+    description="Find resume entries annotated with a topic. Returns entry IDs with labels.",
+    annotations=READ_ONLY_TOOL,
 )
 def query_by_topic(topic: str, include_subtopics: bool = True) -> str:
+    store = get_store()
     results = (
         store.entries_by_topic(topic)
         if include_subtopics
@@ -32,8 +34,12 @@ def query_by_topic(topic: str, include_subtopics: bool = True) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(description="Get cross-references and relationships for a resume entry.")
+@mcp.tool(
+    description="Get cross-references and relationships for a resume entry.",
+    annotations=READ_ONLY_TOOL,
+)
 def get_relationships(entry_id: str) -> str:
+    store = get_store()
     rels = store.relationships_for(entry_id)
     if not rels:
         return f"No relationships found for '{entry_id}'."
@@ -46,9 +52,11 @@ def get_relationships(entry_id: str) -> str:
 
 
 @mcp.tool(
-    description="Get skill proficiency levels across the career, optionally filtered by topic."
+    description="Get skill proficiency levels across the career, optionally filtered by topic.",
+    annotations=READ_ONLY_TOOL,
 )
 def get_skill_profile(topic: str = "") -> str:
+    store = get_store()
     profs = store.semantics.skill_proficiency
     if topic:
         match_ids = set(store.semantics.taxonomy.descendants(topic))
@@ -64,9 +72,11 @@ def get_skill_profile(topic: str = "") -> str:
 
 
 @mcp.tool(
-    description="Get full semantic context for an entry: topics, relationships, summaries, impact."
+    description="Get full semantic context for an entry: topics, relationships, summaries, impact.",
+    annotations=READ_ONLY_TOOL,
 )
 def get_entry_context(entry_id: str) -> str:
+    store = get_store()
     entry = store.entry_by_id(entry_id)
     if entry is None:
         return f"Entry '{entry_id}' not found."

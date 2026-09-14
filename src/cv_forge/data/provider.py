@@ -40,8 +40,11 @@ from loguru import logger
 
 from cv_forge.data.local import RESUME_FILENAME, SEMANTICS_FILENAME
 from cv_forge.data.release import (
+    DEFAULT_RELEASES_URL,
+    PDF_ASSET_NAME,
     ArtifactUnavailable,
     AssetEntry,
+    CachedArtifact,
     ReleaseManifest,
     UnavailableReason,
 )
@@ -150,6 +153,7 @@ class CvDataProvider:
         self._interval = interval
         self._max_asset_bytes = max_asset_bytes
         self._state: RefreshState = self._initial_state(initial, fetcher)
+        self._pdf_cache: CachedArtifact | None = None
 
     @staticmethod
     def _initial_state(
@@ -267,6 +271,46 @@ class CvDataProvider:
             await self.refresh_once()
             with anyio.move_on_after(self._interval):
                 await stop.wait()
+
+    async def fetch_pdf(self) -> bytes | ArtifactUnavailable:
+        """Lazily fetch and cache the compiled PDF against the current release
+        tag.
+
+        The PDF is never part of the parsed snapshot -- Invariant I1 only
+        governs the resume/semantics YAML that `refresh_once` swaps
+        atomically. A pinned provider (no fetcher) has no release to fetch
+        from at all.
+        """
+        if self._fetcher is None:
+            return ArtifactUnavailable(
+                name=PDF_ASSET_NAME,
+                tag=self.current_tag,
+                download_url=DEFAULT_RELEASES_URL,
+                reason=UnavailableReason.NO_RELEASE,
+            )
+
+        tag = self.current_tag
+        if self._pdf_cache is not None and self._pdf_cache.tag == tag:
+            return self._pdf_cache.body
+
+        result = await self._fetcher.fetch_asset(PDF_ASSET_NAME)
+        if isinstance(result, ArtifactUnavailable):
+            return result
+        if len(result) > self._max_asset_bytes:
+            return ArtifactUnavailable(
+                name=PDF_ASSET_NAME,
+                tag=tag,
+                download_url=DEFAULT_RELEASES_URL,
+                reason=UnavailableReason.TOO_LARGE,
+            )
+
+        self._pdf_cache = CachedArtifact(
+            name=PDF_ASSET_NAME,
+            tag=tag or "",
+            body=result,
+            media_type="application/pdf",
+        )
+        return result
 
     async def _fetch_and_parse(self, manifest: ReleaseManifest) -> CvDataSnapshot:
         resume_entry = manifest.assets.get(RESUME_FILENAME)
