@@ -142,6 +142,7 @@ PLUGIN_MANIFESTS=(
 
 if [ "$DRY_RUN" -eq 1 ]; then
     info "[DRY RUN] Would write version=\"$NEW_VERSION\" to: pyproject.toml"
+    info "[DRY RUN] Would write __version__=\"$NEW_VERSION\" to: src/cv_forge/__init__.py"
     for manifest in "${PLUGIN_MANIFESTS[@]}"; do
         info "[DRY RUN] Would set \"version\": \"$NEW_VERSION\" in: $manifest"
     done
@@ -174,6 +175,27 @@ new_content, count = re.subn(
 )
 if count != 1:
     sys.exit(f"error: expected exactly one top-level version line in {path}, found {count}")
+with open(path, "w") as f:
+    f.write(new_content)
+PY
+
+# ---- Write version into the package constant ------------------------------
+# src/cv_forge/__init__.py's __version__ is what the CLI's --version and the
+# server's /healthz report when the distribution is not pip-installed (the
+# Edge image stages the source tree, so dist-info is absent there).
+
+PACKAGE_INIT="src/cv_forge/__init__.py"
+info "Updating $PACKAGE_INIT..."
+python3 - "$PACKAGE_INIT" "$NEW_VERSION" <<'PY'
+import re, sys
+path, new_version = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    content = f.read()
+new_content, count = re.subn(
+    r'(?m)^__version__ = "[^"]+"$', f'__version__ = "{new_version}"', content, count=1
+)
+if count != 1:
+    sys.exit(f"error: expected exactly one __version__ line in {path}, found {count}")
 with open(path, "w") as f:
     f.write(new_content)
 PY
@@ -224,7 +246,7 @@ pixi install >/dev/null || error "pixi install failed while refreshing pixi.lock
 # ---- Commit, tag, push -------------------------------------------------------
 
 info "Committing version bump..."
-git add pyproject.toml pixi.lock "${PLUGIN_MANIFESTS[@]}"
+git add pyproject.toml pixi.lock "$PACKAGE_INIT" "${PLUGIN_MANIFESTS[@]}"
 git commit -m "chore(release): $TAG"
 
 info "Tagging $TAG and re-pointing $MAJOR_ALIAS..."
