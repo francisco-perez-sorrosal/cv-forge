@@ -8,67 +8,65 @@ answer identically because both are the same ASGI app, built the same way,
 with the same `stateless_http` setting. Tool/resource registration is a
 side effect of importing `cv_forge.mcp.server` (see that module's
 `_register_modules`), not of importing this one.
+
+Environment parsing and provider construction live in
+`cv_forge.data.bootstrap` (shared with the `cv-forge serve` CLI); this
+module's own job is rendering that module's raised exceptions as an
+actionable startup error and choosing an exit code, not path/network policy.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from dataclasses import replace
-from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, NoReturn, cast
 
 from loguru import logger
 
-from cv_forge.data.local import load_local_dir
+from cv_forge.data.bootstrap import (
+    DEFAULT_REFRESH_INTERVAL_SECONDS,
+    build_provider_from_env,
+    repo_root,
+)
+from cv_forge.data.local import LocalDataDirError
 from cv_forge.data.provider import CvDataProvider
-from cv_forge.data.release import DEFAULT_CV_REPO, GitHubReleaseFetcher
-from cv_forge.data.snapshot import BakedSnapshot, CvDataSnapshot
-from cv_forge.mcp.server import mcp, set_provider
+from cv_forge.mcp.server import bound_provider, mcp
 
-DEFAULT_REFRESH_INTERVAL_SECONDS = 900.0
 DEFAULT_PORT = 10000
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+def _build_provider_or_exit() -> CvDataProvider:
+    """`build_provider_from_env()`, rendering its two documented failure
+    modes as a three-part (what/why/how) startup error on stderr instead of
+    an uncaught traceback (`INTERFACE_DESIGN.md §1.6`'s error shape)."""
+    try:
+        return build_provider_from_env()
+    except LocalDataDirError as exc:
+        _exit_with_startup_error(
+            what="no CV data directory found",
+            why=str(exc),
+            how=(
+                "export CV_DATA_DIR=/path/to/cv-data\n"
+                "       or:    export CV_BAKED_DIR=/path/to/baked\n"
+                f"       or:    place resume.yaml in {repo_root() / 'cv-data'}"
+            ),
+        )
+    except ValueError as exc:
+        _exit_with_startup_error(
+            what="invalid CV_REFRESH_INTERVAL",
+            why=str(exc),
+            how=(
+                "set CV_REFRESH_INTERVAL to a number of seconds, e.g. "
+                f"CV_REFRESH_INTERVAL={DEFAULT_REFRESH_INTERVAL_SECONDS:.0f}"
+            ),
+        )
 
 
-def _baked_snapshot_dir() -> Path:
-    """The deploy-time-staged data directory, or a local fallback.
-
-    `scripts/deploy.sh` materializes `baked/` into the Edge image; a local
-    checkout that never ran that script has no `baked/`, so this worktree's
-    own `cv-data/` stands in -- local runs work without the deploy step.
-    """
-    baked = Path(os.environ.get("CV_BAKED_DIR", str(_repo_root() / "baked")))
-    return baked if baked.is_dir() else _repo_root() / "cv-data"
-
-
-def _initial_snapshot() -> CvDataSnapshot:
-    """`CV_DATA_DIR` wins when set (pinned/offline mode); otherwise
-    load the baked snapshot as the origin the refresh loop promotes to a real
-    release on its first successful poll (`CvDataProvider._initial_state`)."""
-    data_dir_env = os.environ.get("CV_DATA_DIR")
-    if data_dir_env:
-        return load_local_dir(Path(data_dir_env))
-    snapshot = load_local_dir(_baked_snapshot_dir())
-    return replace(
-        snapshot, origin=BakedSnapshot(staged_at=snapshot.loaded_at, tag=None)
-    )
-
-
-def _build_provider() -> CvDataProvider:
-    fetcher = None
-    if not os.environ.get("CV_DATA_DIR"):
-        repo = os.environ.get("CV_RELEASE_REPO", DEFAULT_CV_REPO)
-        fetcher = GitHubReleaseFetcher(repo=repo)
-    interval = float(
-        os.environ.get("CV_REFRESH_INTERVAL", DEFAULT_REFRESH_INTERVAL_SECONDS)
-    )
-    return CvDataProvider(
-        initial=_initial_snapshot(), fetcher=fetcher, interval=interval
-    )
+def _exit_with_startup_error(*, what: str, why: str, how: str) -> NoReturn:
+    print(f"cv-forge-mcp: {what}.", file=sys.stderr)
+    print(f"     {why}", file=sys.stderr)
+    print(f"     To fix:  {how}", file=sys.stderr)
+    sys.exit(1)
 
 
 def _transport_config() -> tuple[Literal["stdio", "streamable-http"], str, int, bool]:
@@ -86,7 +84,7 @@ def _transport_config() -> tuple[Literal["stdio", "streamable-http"], str, int, 
 def main() -> None:
     """Initialize and run the server with the specified transport."""
     logger.info(f"Python version: {sys.version}")
-    provider = _build_provider()
+    provider = _build_provider_or_exit()
     transport, host, port, stateless = _transport_config()
     logger.info(
         f"Starting CV MCP server with {transport} transport ({host}:{port}) "
@@ -100,8 +98,13 @@ def main() -> None:
         app = create_app(provider, stateless=stateless)
         uvicorn.run(app, host=host, port=port, log_level="info")
     else:
-        set_provider(provider)
-        mcp.run(transport=transport)
+        # Only one provider ever exists in the stdio process (unlike
+        # streamable-http, which can serve several `create_app()` apps),
+        # so binding once for the whole run -- rather than per message --
+        # is correct: `mcp.run()`'s internal tasks all start after this and
+        # therefore all inherit the binding (see `server.bound_provider`).
+        with bound_provider(provider):
+            mcp.run(transport=transport)
 
 
 if __name__ == "__main__":

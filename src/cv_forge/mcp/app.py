@@ -13,12 +13,16 @@ diverge on session semantics. `cv_forge.mcp.main.main()` threads the same
 `stateless` value through both the ASGI-app path and the stdio path for the
 same reason.
 
-The lifespan below binds the provider into the shared tool registry
-(`cv_forge.mcp.server.set_provider`), starts the background refresh loop (a
-no-op when `provider` has no fetcher -- Invariant I4), and only then enters
-the MCP session manager's own lifespan (`session_manager.run()`) -- so on
-shutdown the refresh task is cancelled *before* the session manager tears
-down, the reverse of acquisition order.
+The returned app's lifespan enters the MCP session manager's own lifespan
+(`session_manager.run()`) and starts the background refresh loop (a no-op
+when `provider` has no fetcher -- Invariant I4) inside it, so on shutdown the
+refresh task is cancelled *before* the session manager tears down, the
+reverse of acquisition order. `_BindProviderMiddleware` binds `provider` onto
+`cv_forge.mcp.server`'s request-scoped `ContextVar` for the duration of every
+inbound HTTP request, so tools and resources -- which take no `Context`
+parameter and call `get_store()`/`get_provider()` with no arguments -- reach
+*this app's* provider even when a second `create_app()` runs in the same
+process.
 
 A 503 `no_validated_snapshot` response (`INTERFACE_DESIGN.md` §3.2) has no
 code path here: `provider` is a required, already-validated
@@ -33,39 +37,90 @@ that window is short.
 from __future__ import annotations
 
 import importlib.metadata
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from cv_forge.data.provider import CvDataProvider, Fresh, Pinned, RefreshState, Stale
 from cv_forge.data.snapshot import BakedSnapshot, DataOrigin, LocalDir, ReleaseAssets
-from cv_forge.mcp.server import mcp, set_provider
+from cv_forge.mcp.server import bound_provider, mcp
 
-# Wasmer Edge terminates and validates the public hostname in front of this
-# app; the internal ASGI hop does not need a second DNS-rebinding check, and
-# the SDK's default (`enable_dns_rebinding_protection=True` with an empty
-# `allowed_hosts`) would reject every request whose `Host` header isn't on
-# that empty allowlist.
-_TRANSPORT_SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+# `main.py`'s stdio and local `streamable-http` paths have no front door
+# validating the `Host` header for them, so the default here stays
+# *protected*, with the in-process test transport's synthetic hostname
+# allow-listed. Only `CV_TRUST_HOST=1` -- set by `scripts/deploy.sh` for the
+# Edge image, where Wasmer Edge already terminates and validates the public
+# hostname in front of this app -- turns the check off; the SDK's own
+# default (`enable_dns_rebinding_protection=True` with an empty
+# `allowed_hosts`) would otherwise reject every request there too.
+_LOCAL_ALLOWED_HOSTS = ["127.0.0.1:*", "localhost:*", "testserver"]
+
+
+def _resolve_cv_forge_version() -> str:
+    """Resolved once at import, not per `/healthz` request -- both because a
+    filesystem/dist-info scan on every liveness probe is wasted work, and
+    because an MCPB or Wasmer bundle can ship importable code with no
+    dist-info at all, which would otherwise turn a healthy server into a 500
+    on the very probe meant to prove it is alive."""
+    try:
+        return importlib.metadata.version("cv-forge")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+_CV_FORGE_VERSION = _resolve_cv_forge_version()
+
+
+def _transport_security() -> TransportSecuritySettings:
+    if os.environ.get("CV_TRUST_HOST") == "1":
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True, allowed_hosts=_LOCAL_ALLOWED_HOSTS
+    )
+
+
+class _BindProviderMiddleware:
+    """Binds `provider` into `cv_forge.mcp.server`'s request-scoped
+    `ContextVar` for the duration of one HTTP request -- see `app.py`'s
+    module docstring for why tool/resource call sites need this rather than
+    a plain module global."""
+
+    def __init__(self, app: ASGIApp, *, provider: CvDataProvider) -> None:
+        self._app = app
+        self._provider = provider
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        with bound_provider(self._provider):
+            await self._app(scope, receive, send)
 
 
 def create_app(provider: CvDataProvider, *, stateless: bool = True) -> Starlette:
     """Build the ASGI app backing both the Edge entrypoint and `cv-forge serve`."""
-    set_provider(provider)
-
     inner_app = mcp.streamable_http_app(
-        stateless_http=stateless, transport_security=_TRANSPORT_SECURITY
+        stateless_http=stateless, transport_security=_transport_security()
     )
     # The specific manager `streamable_http_app()` just created -- captured
     # locally rather than re-read from `mcp.session_manager` later, so a
     # second `create_app()` call in the same process (tests build several)
-    # can never make this lifespan enter someone else's manager.
+    # can never make this lifespan enter someone else's manager. Note for
+    # test authors: `session_manager.run()` can only be entered once per
+    # instance ("StreamableHTTPSessionManager .run() can only be called
+    # once per instance") -- a real server enters this app's lifespan
+    # exactly once, but a test that drives the ASGI lifespan protocol by
+    # hand twice against the *same* `create_app()` result will hit this;
+    # do everything one test needs inside a single lifespan entry instead.
     session_manager = mcp.session_manager
 
     @asynccontextmanager
@@ -80,7 +135,13 @@ def create_app(provider: CvDataProvider, *, stateless: bool = True) -> Starlette
                     stop.set()
 
     healthz_route = Route("/healthz", _healthz_handler(provider), methods=["GET"])
-    return Starlette(routes=[healthz_route, *inner_app.routes], lifespan=lifespan)
+    app = Starlette(
+        routes=[healthz_route, *inner_app.routes],
+        middleware=[Middleware(_BindProviderMiddleware, provider=provider)],
+        lifespan=lifespan,
+    )
+    app.state.provider = provider
+    return app
 
 
 def _healthz_handler(provider: CvDataProvider):
@@ -104,7 +165,7 @@ def _healthz_body(provider: CvDataProvider) -> dict[str, object]:
         "release_tag": provider.current_tag,
         "loaded_at": provider.snapshot.loaded_at.isoformat(),
         "refresh_state": _state_kind(state),
-        "cv_forge_version": _cv_forge_version(),
+        "cv_forge_version": _CV_FORGE_VERSION,
     }
     if isinstance(state, Fresh | Stale):
         body["consecutive_failures"] = provider.consecutive_failures
@@ -140,7 +201,3 @@ def _origin_body(origin: DataOrigin) -> dict[str, object]:
             }
         case BakedSnapshot(staged_at=staged_at, tag=tag):
             return {"kind": "baked", "staged_at": staged_at.isoformat(), "tag": tag}
-
-
-def _cv_forge_version() -> str:
-    return importlib.metadata.version("cv-forge")

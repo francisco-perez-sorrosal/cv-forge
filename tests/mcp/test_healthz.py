@@ -55,17 +55,20 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 import anyio
 import httpx2
 import pytest
 import yaml
-from cv_forge.mcp.app import create_app
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
 from cv_forge.data.local import load_local_dir
 from cv_forge.data.provider import CvDataProvider
 from cv_forge.data.release import ArtifactUnavailable, ReleaseManifest
-from cv_forge.data.snapshot import CvDataSnapshot, ReleaseAssets
+from cv_forge.data.snapshot import CvDataSnapshot, LocalDir, ReleaseAssets
+from cv_forge.mcp.app import create_app
 
 RESUME_YAML = yaml.dump(
     {"personal_info": {"name": "Healthz Test"}, "institutions": [], "work": []}
@@ -239,3 +242,62 @@ class TestNoValidatedSnapshotIsUnreachableInProcess:
         """
         with pytest.raises(TypeError):
             create_app()
+
+
+async def _healthz_json_then_markdown_via(app) -> tuple[dict, str]:
+    """One `/healthz` GET followed by one `get_cv` tool call, both against
+    `app`, inside a single ASGI lifespan entry -- `StreamableHTTPSessionManager
+    .run() can only be called once per instance`, so this cannot be split
+    into two separate `_run_asgi_lifespan(app)` blocks the way the rest of
+    this file's tests each use their own app exactly once."""
+    async with _run_asgi_lifespan(app):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            healthz_body = (await client.get("/healthz")).json()
+            async with streamable_http_client(
+                "http://testserver/mcp", http_client=client
+            ) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    result = await session.call_tool("get_cv", {"format": "markdown"})
+                    return healthz_body, result.content[0].text
+
+
+class TestTwoAppsInOneProcessStayIndependent:
+    """`create_app()` used to bind the provider onto a process-global,
+    last-writer-wins module variable -- building a second app in the same
+    process silently repointed the first app's tools (though never its
+    `/healthz`, which always closed over `provider` directly). This pins the
+    fix across both surfaces: two `create_app()` instances, queried only
+    through their own app objects, each see only their own provider.
+    """
+
+    def test_second_app_does_not_repoint_the_first_apps_tools_or_healthz(self):
+        provider1 = CvDataProvider(
+            initial=CvDataSnapshot.parse(
+                yaml.dump({"personal_info": {"name": "Provider One"}}).encode(),
+                None,
+                LocalDir(path=Path("/data/one")),
+            ),
+            fetcher=None,
+        )
+        provider2 = CvDataProvider(
+            initial=CvDataSnapshot.parse(
+                yaml.dump({"personal_info": {"name": "Provider Two"}}).encode(),
+                None,
+                LocalDir(path=Path("/data/two")),
+            ),
+            fetcher=None,
+        )
+
+        app1 = create_app(provider1)
+        app2 = create_app(provider2)  # built after app1 -- must not repoint it
+
+        healthz_body, markdown = asyncio.run(_healthz_json_then_markdown_via(app1))
+
+        assert healthz_body["origin"]["path"] == "/data/one"
+        assert app1.state.provider is provider1
+        assert app2.state.provider is provider2
+        assert "Provider One" in markdown
+        assert "Provider Two" not in markdown

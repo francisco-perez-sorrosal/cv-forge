@@ -70,10 +70,16 @@ class ReleaseManifest(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class CachedArtifact:
-    """A fetched release asset, cached in memory against its release tag."""
+    """A fetched release asset, cached in memory against its release tag.
+
+    `tag` mirrors `CvDataProvider.current_tag` (`str | None`) rather than
+    coercing `None` to `""` -- the boot-state tag (no successful refresh yet)
+    has to compare equal to itself across repeated calls, and only `None ==
+    None` does that; `"" == None` never does.
+    """
 
     name: str
-    tag: str
+    tag: str | None
     body: bytes
     media_type: str
 
@@ -82,7 +88,9 @@ class ArtifactUnavailable(BaseModel):
     """A release asset could not be fetched -- an error value, not an exception.
 
     Carries a direct download URL so a client that cannot get bytes still
-    has an actionable next step.
+    has an actionable next step. `http_status` is populated only when
+    `reason` came from an actual HTTP response (`http_error`/`no_release`);
+    a timeout or a missing release never reached one.
     """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="ignore")
@@ -91,6 +99,7 @@ class ArtifactUnavailable(BaseModel):
     tag: str | None
     download_url: str
     reason: UnavailableReason
+    http_status: int | None = None
 
 
 def format_unavailable(
@@ -99,14 +108,19 @@ def format_unavailable(
     """Render an `ArtifactUnavailable` as the entire client-visible signal.
 
     A tool error's text has no separate structured channel a naive client
-    reads, so the reason and the direct download URL both have to survive as
-    plain text -- this is the one place that formatting happens, shared by
-    the `get_cv(format="pdf")` tool error and the `fps-cv://pdf` resource's
-    JSON-RPC error.
+    reads, so the reason, release tag, HTTP status (when known) and the
+    direct download URL all have to survive as plain text -- this is the one
+    place that formatting happens, shared by the `get_cv(format="pdf")` tool
+    error and the `fps-cv://pdf` resource's JSON-RPC error.
     """
+    release = f" for release {unavailable.tag}" if unavailable.tag else ""
+    status = (
+        f", http_status: {unavailable.http_status}" if unavailable.http_status else ""
+    )
     message = (
-        f"artifact_unavailable: {unavailable.name} could not be fetched "
-        f"(reason: {unavailable.reason}). Download directly: {unavailable.download_url}."
+        f"artifact_unavailable: {unavailable.name}{release} could not be fetched "
+        f"(reason: {unavailable.reason}{status}). "
+        f"Download directly: {unavailable.download_url}."
     )
     return f"{message} {alternatives}".rstrip() if alternatives else message
 
@@ -179,6 +193,7 @@ class GitHubReleaseFetcher:
                 tag=None,
                 download_url=url,
                 reason=UnavailableReason.NO_RELEASE,
+                http_status=response.status_code,
             )
         if response.status_code >= 400:
             return ArtifactUnavailable(
@@ -186,5 +201,6 @@ class GitHubReleaseFetcher:
                 tag=None,
                 download_url=url,
                 reason=UnavailableReason.HTTP_ERROR,
+                http_status=response.status_code,
             )
         return response.content

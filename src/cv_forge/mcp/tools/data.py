@@ -111,12 +111,12 @@ def get_tailored_cv(
     and profile override. Returns compilable source code.
     Use this tool after analyzing a job description to produce a targeted CV.
     """
-    store = get_store()
     try:
         spec = TailoringSpec.model_validate_json(tailoring_config)
     except Exception as exc:
         schema = json.dumps(TailoringSpec.model_json_schema(), indent=2)
         return f"Invalid TailoringSpec: {exc}\n\nExpected JSON schema:\n{schema}"
+    store = get_store()
     logger.debug(f"Rendering tailored CV for '{spec.job_title}' at '{spec.company}'...")
     if format == "typst":
         return render_tailored_typst(store, spec)

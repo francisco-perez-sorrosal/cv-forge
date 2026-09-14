@@ -1,5 +1,6 @@
 """CV data layer: parsed snapshots, release wire format, and query store."""
 
+from cv_forge.data.bootstrap import build_provider_from_env
 from cv_forge.data.local import LocalDataDirError, load_local_dir
 from cv_forge.data.provider import (
     CvDataProvider,
@@ -52,5 +53,6 @@ __all__ = [
     "UnavailableReason",
     "Unchanged",
     "Updated",
+    "build_provider_from_env",
     "load_local_dir",
 ]

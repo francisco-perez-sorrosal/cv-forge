@@ -295,7 +295,11 @@ class CvDataProvider:
 
         result = await self._fetcher.fetch_asset(PDF_ASSET_NAME)
         if isinstance(result, ArtifactUnavailable):
-            return result
+            # The fetcher has no notion of a release tag (it only knows the
+            # asset name); the provider does, so it fills the field in
+            # rather than leaving the client-visible error silent about
+            # which release the failure applies to.
+            return result.model_copy(update={"tag": tag})
         if len(result) > self._max_asset_bytes:
             return ArtifactUnavailable(
                 name=PDF_ASSET_NAME,
@@ -304,9 +308,16 @@ class CvDataProvider:
                 reason=UnavailableReason.TOO_LARGE,
             )
 
+        # Keyed on `tag` directly (including `None`, the boot-state tag
+        # before any successful refresh) rather than the coerced `tag or ""`
+        # this replaced -- that coercion made `CachedArtifact.tag` a `str`
+        # that could never equal the `str | None` `current_tag` it was
+        # compared against, so the cache was written on every call and never
+        # read back in the boot state (repeated network fetches until the
+        # first successful refresh promotes a real tag).
         self._pdf_cache = CachedArtifact(
             name=PDF_ASSET_NAME,
-            tag=tag or "",
+            tag=tag,
             body=result,
             media_type="application/pdf",
         )

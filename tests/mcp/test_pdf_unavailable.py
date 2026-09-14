@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import anyio
@@ -37,7 +37,7 @@ from mcp.shared.exceptions import MCPError
 
 from cv_forge.data.provider import CvDataProvider
 from cv_forge.data.release import ArtifactUnavailable, ReleaseManifest
-from cv_forge.data.snapshot import CvDataSnapshot, ReleaseAssets
+from cv_forge.data.snapshot import BakedSnapshot, CvDataSnapshot, ReleaseAssets
 from cv_forge.mcp.app import create_app
 
 RESUME_YAML = yaml.dump(
@@ -83,6 +83,13 @@ def _manifest(tag: str) -> ReleaseManifest:
 
 def _release_snapshot(tag: str = TAG) -> CvDataSnapshot:
     origin = ReleaseAssets(tag=tag, published_at=datetime.now(UTC))
+    return CvDataSnapshot.parse(RESUME_YAML, None, origin)
+
+
+def _baked_snapshot_with_no_tag() -> CvDataSnapshot:
+    """The boot-state origin `main.py::initial_snapshot_from_env` constructs
+    before any successful refresh -- `tag=None`, not yet a real release."""
+    origin = BakedSnapshot(staged_at=datetime.now(UTC), tag=None)
     return CvDataSnapshot.parse(RESUME_YAML, None, origin)
 
 
@@ -243,3 +250,79 @@ class TestToolAnnotationsAndStatelessness:
             assert annotations.read_only_hint is True
             assert annotations.idempotent_hint is True
             assert annotations.open_world_hint is False
+
+
+@dataclass
+class CountingAssetFetcher:
+    """No-network fake that always serves a fixed PDF payload and counts how
+    many times `fetch_asset` actually ran a fetch -- pins the PDF cache's hit
+    rate, distinct from `FakeReleaseFetcher` above which always reports the
+    asset unavailable and never needs a call counter."""
+
+    pdf_bytes: bytes
+    fetch_count: int = field(default=0, init=False)
+
+    async def fetch_manifest(self) -> ReleaseManifest | ArtifactUnavailable:
+        raise AssertionError("fetch_pdf never calls fetch_manifest")
+
+    async def fetch_asset(self, name: str) -> bytes | ArtifactUnavailable:
+        self.fetch_count += 1
+        return self.pdf_bytes
+
+
+class TestPdfCachingAtTheBootStateTag:
+    def test_three_pdf_fetches_at_boot_tag_none_hit_the_network_once(self):
+        fetcher = CountingAssetFetcher(pdf_bytes=b"%PDF-1.4 fake pdf content")
+        provider = CvDataProvider(
+            initial=_baked_snapshot_with_no_tag(), fetcher=fetcher
+        )
+        app = create_app(provider)
+
+        async def _call_three_times() -> int:
+            async with _mcp_session(app) as session:
+                for _ in range(3):
+                    result = await session.call_tool("get_cv", {"format": "pdf"})
+                    assert result.is_error is not True
+            return fetcher.fetch_count
+
+        fetch_count = asyncio.run(_call_three_times())
+
+        assert fetch_count == 1
+
+
+class TestStatelessnessOnTheWire:
+    """`test_tools_list_over_the_stateless_app_succeeds...` above drives a
+    full `ClientSession`, which stores and replays the `Mcp-Session-Id`
+    header `initialize()` returns -- so it succeeds in both stateless and
+    stateful modes and can never observe the difference. These tests instead
+    send one raw `tools/list` POST with no prior `initialize` and no session
+    header at all, the only request shape that actually distinguishes them.
+    """
+
+    @staticmethod
+    async def _raw_tools_list(app) -> httpx2.Response:
+        async with _run_asgi_lifespan(app):
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
+            ) as client:
+                return await client.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                    headers={"Accept": "application/json, text/event-stream"},
+                )
+
+    def test_stateless_app_serves_tools_list_with_no_session_id(self):
+        provider = _provider_with_pdf_unavailable()
+        app = create_app(provider, stateless=True)
+
+        response = asyncio.run(self._raw_tools_list(app))
+
+        assert response.status_code == 200
+
+    def test_stateful_app_rejects_tools_list_with_no_session_id(self):
+        provider = _provider_with_pdf_unavailable()
+        app = create_app(provider, stateless=False)
+
+        response = asyncio.run(self._raw_tools_list(app))
+
+        assert response.status_code != 200
