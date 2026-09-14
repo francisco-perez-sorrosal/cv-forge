@@ -1,43 +1,111 @@
-# Francisco Perez-Sorrosal CV
+# CV Agent Toolkit
 
-This repository contains Francisco Perez-Sorrosal's CV in multiple formats:
+A suite of tools for working with Francisco Perez-Sorrosal's CV and professional information. Combines an MCP server, two agent skills, and two Claude Code plugins into installable packages.
 
-- **Main branch (`main`)**: Contains the LaTeX source CV and generated PDF
-- **MCP branch (`mcp`)**: Contains a Python-based MCP (Model Context Protocol) server that serves the CV as a resource for AI systems
+## What It Does
 
-## LaTeX CV (Main Branch)
+- **MCP Server** — serves CV content in markdown, PDF, LaTeX, HTML, and Typst formats via 16 tools, plus semantic query capabilities and tailored CV rendering
+- **`cv-analyst` Skill** — structured CV summarization for different audiences (hiring screens, executive briefings, technical reviews) with output in multiple formats
+- **`cv-tailoring` Skill** — job-targeted CV tailoring that analyzes a job description, selects relevant content, and produces a page-constrained (2-3 pages) compiled PDF
+- **Two Claude Code Plugins** — `cv` (consumer-facing) and `cv-forge` (maintainer-facing, editor + publisher)
 
-### Requirements (macOS)
+## Installation
 
-- LaTeX distribution (MacTeX recommended)
+### Claude Code (Recommended)
 
-MacTeX includes:
-
-1. `pdflatex` a common compiler for converting LaTeX files into PDF
-2. `latexmk` a Perl script that runs pdflatex plus other necessary tools like BibTeX or Biber
-
-### Installing MacTeX with Homebrew
+Install both plugins from bit-agora:
 
 ```bash
-brew install --cask mactex
+claude plugin marketplace add francisco-perez-sorrosal/bit-agora
+claude plugin install cv
 ```
 
-Or download from https://tug.org/mactex/
+This installs the MCP server (remote, on Wasmer Edge) plus both agent skills. The `cv` plugin is the entry point for end users; the `cv-forge` plugin is for the maintainer.
 
-### CV Compilation
+### Claude Desktop
 
-```bash
-# Compile CV to PDF with latexmk (recommended) (-c cleans auxiliary files)
-latexmk -pdf -c FranciscoPerezSorrosal_CV_English.tex
+Add a custom connector:
 
-# or compile it with pdflatex
-pdflatex FranciscoPerezSorrosal_CV_English.tex
-```
+1. Open Claude Desktop Settings
+2. Go to Connections (or Extensions)
+3. Add a custom connector with the MCP URL: `https://fps-cv-mcp.wasmer.app/mcp`
 
-## MCP Server (MCP Branch)
+The MCP server fetches CV data from GitHub Release assets. If you have local CV data (the `cv` repository cloned), set `CV_DATA_DIR=<path>` to render against that instead.
 
-Refer to the documentation below:
+## Usage
 
-1. [User Guide](https://github.com/francisco-perez-sorrosal/cv/blob/mcp/README_USER.md)
-2. [Dev Documentation](https://github.com/francisco-perez-sorrosal/cv/blob/mcp/README_DEV.md)
-3. [CI/CD Documentation](https://github.com/francisco-perez-sorrosal/cv/blob/mcp/README_CICD.md)
+### Retrieve and Summarize the CV
+
+- "Get Francisco's CV"
+- "Summarize Francisco's CV for a startup executive briefing"
+- "What is Francisco's Google Scholar profile link?"
+- "Give me a 3 page summary of my CV for a hiring manager oriented towards an AI engineer position in HTML"
+- "Give me the CV in LaTeX"
+
+### Tailor the CV for a Job
+
+Use the `cv-tailoring` skill to adapt the CV to a specific job description:
+
+- "Tailor my CV for this job: [paste job description]"
+- "Adapt my resume for a Senior ML Engineer position at Google"
+- "Customize my CV for this LinkedIn job"
+
+The tailoring pipeline analyzes the job description, assesses fit against CV content, reorders sections, filters entries, and renders a 2-3 page PDF.
+
+### Publish (Maintainer Only)
+
+Use the `cv-forge` plugin to edit CV data, open a PR, publish a release, and deploy updates:
+
+- "Edit my CV: change my title at Yahoo to Principal Research Engineer"
+- "Show me the diff and open a PR" (validation happens automatically)
+- "Publish the CV" (tags and deploys to Wasmer)
+
+## The Two Repositories
+
+**`cv` (data repository)** — Contains the CV content in structured YAML format:
+- `cv-data/resume.yaml` — Work experience, education, projects, publications, skills
+- `cv-data/resume-semantics.yaml` — Semantic overlay with topic taxonomy and cross-references
+- `schemas/` — JSON Schema pair for validation and structure definition
+
+**`cv-forge` (this repository)** — Contains all the machinery:
+- Python MCP server and CLI for rendering and serving
+- Jinja2 templates for five output formats
+- Two Claude Code plugins
+- GitHub Actions for publishing and deploying
+- Wasmer Edge apps for hosting
+
+The two repositories share no code — only two pinned artifacts (a reusable GitHub workflow and mirrored schemas) and one runtime data source (GitHub Release assets).
+
+## Rendered CV
+
+The latest compiled CV is published as:
+- **HTML (interactive)** — https://fps-cv.wasmer.app/
+- **PDF** — GitHub Release asset at `releases/latest/download/resume.pdf`
+- **LaTeX (moderncv)** — GitHub Release asset at `releases/latest/download/resume.tex`
+- **Typst (moderner-cv)** — GitHub Release asset at `releases/latest/download/resume.typst`
+- **Markdown** — GitHub Release asset at `releases/latest/download/resume.md`
+
+All assets are regenerated every time the CV data is updated.
+
+## Release Assets
+
+Each release contains eight stable, version-free assets:
+
+| Asset | Format | Purpose |
+|-------|--------|---------|
+| `resume.md` | Markdown | Full CV for AI consumption |
+| `resume.tex` | LaTeX (moderncv) | Full CV for local compilation |
+| `resume.html` | HTML | Interactive CV for web browsers |
+| `resume.typst` | Typst (moderner-cv) | Full CV for Typst compilation |
+| `resume.pdf` | PDF | Compiled full CV |
+| `resume-tailored.tex` | LaTeX (tailored) | Tailored template (requires TailoringSpec) |
+| `resume-tailored.typst` | Typst (tailored) | Tailored template (requires TailoringSpec) |
+| `release.json` | JSON | Release metadata and asset manifest |
+
+For developer documentation and deployment details, see [README_DEV.md](README_DEV.md) and [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+
+For the CV data repository, see [github.com/francisco-perez-sorrosal/cv](https://github.com/francisco-perez-sorrosal/cv).
+
+## Support
+
+For technical issues or questions about the machinery, refer to this repository. For questions or corrections about CV content, refer to the `cv` data repository.

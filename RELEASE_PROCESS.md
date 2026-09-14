@@ -1,149 +1,248 @@
-# Release Process for CV MCP Server
+# Release Process
 
-This document describes the automated release process for the CV MCP Server MCPB bundles.
+This document describes the release workflows for both the `cv-forge` machinery repository and the `cv` data repository.
 
-## Quick Release
+## cv-forge Release (SemVer)
 
-To create a new release, simply run:
+The `cv-forge` repository uses **Semantic Versioning** (SemVer). Releases are driven by `scripts/release.sh` and tagged on the `main` branch.
+
+### Quick Start
 
 ```bash
-./scripts/release.sh 0.0.1
+scripts/release.sh patch          # 0.0.5 -> 0.0.6
+scripts/release.sh minor          # 0.0.5 -> 0.1.0
+scripts/release.sh major          # 0.0.5 -> 1.0.0
+scripts/release.sh 1.2.3          # explicit version
+scripts/release.sh patch --dry-run # preview only
 ```
 
-This will handle everything automatically:
-1. ✅ Update versions in `manifest.json` and `pyproject.toml`
-2. ✅ Commit the version changes
-3. ✅ Create and push a git tag (`v0.0.1`)
-4. ✅ Trigger GitHub Actions to build and release the MCPB bundle
+### What `release.sh` Does
 
-## Release Workflow
+1. **Validates** the working tree is clean
+2. **Bumps** `pyproject.toml`'s `[project].version`
+3. **Propagates** the version into both `plugin.json` files (consumer + maintainer plugins)
+4. **Commits** the version changes
+5. **Tags** the commit as `v<version>` (e.g., `v0.0.6`)
+6. **Re-points** the moving `v<MAJOR>` alias (e.g., `v0`) to the new tag
+7. **Pushes** the commit and tags to `origin`
 
-### 1. Automated GitHub Actions
+The push to `origin` **triggers** `.github/workflows/deploy-mcp.yml`, which:
+- Builds the MCP server app for Wasmer Edge
+- Deploys to the `fps-cv-mcp` Wasmer Edge app
+- Publishes release assets (eight files)
 
-When you push a tag (e.g., `v0.0.1`), the following happens automatically:
+### Manual Workflow
 
-#### `release-mcpb.yml` workflow:
-- ✅ Sets up Python 3.13 environment (Claude Desktop compatibility)
-- ✅ Installs all required tools (pixi, uv, MCPB CLI)
-- ✅ Updates manifest.json with the tag version
-- ✅ Builds dependencies using Python 3.13
-- ✅ Creates versioned MCPB bundle (`fps-cv-mcp-0.0.1.mcpb`)
-- ✅ Creates GitHub release with detailed release notes
-- ✅ Attaches MCPB bundle to the release
-- ✅ Uploads bundle as build artifact (90-day retention)
+If you prefer not to use `release.sh`:
 
-#### `check-mcpb-creation.yml` workflow:
-- ✅ Runs on pull requests and pushes to `mcp` branch
-- ✅ Validates manifest.json structure
-- ✅ Tests MCP server startup
-- ✅ Verifies MCPB bundle can be built successfully
-- ✅ Validates bundle archive integrity
-
-### 2. Release Artifacts
-
-Each release includes:
-- **MCPB Bundle**: `fps-cv-mcp-{version}.mcpb`
-- **Python Version**: 3.13 compatible
-- **Architecture**: ARM64 (macOS Apple Silicon)
-- **Size**: ~30MB compressed, ~70MB unpacked
-- **Dependencies**: All bundled in `lib/` directory
-
-### 3. Version Management
-
-The release process maintains version consistency across:
-- `manifest.json` - MCPB bundle metadata
-- `pyproject.toml` - Python package metadata
-- Git tags - Version control and release triggers
-
-## Manual Release (Advanced)
-
-If you need manual control over the release process:
-
-### Step 1: Update Versions
 ```bash
-# Edit manifest.json and pyproject.toml to update version fields
-# Then commit the changes
-git add manifest.json pyproject.toml
-git commit -m "chore: bump version to 0.0.1"
+# 1. Edit pyproject.toml and update [project].version
+# 2. Manually edit both plugin.json files
+# 3. Commit
+git add pyproject.toml plugins/cv/.claude-plugin/plugin.json plugins/cv-forge/.claude-plugin/plugin.json
+git commit -m "chore(release): 0.0.6"
+
+# 4. Tag
+git tag v0.0.6
+git tag -f v0  # re-point major alias
+
+# 5. Push
+git push origin main v0.0.6 v0
 ```
 
-### Step 2: Create Tag
+### Deploy-MCP Workflow
+
+When a `v*` tag is pushed, `.github/workflows/deploy-mcp.yml` automatically:
+
+1. Checks out the code at that tag
+2. Validates the WASIX dependency ceilings
+3. Uses `anybuild` to build a Wasmer-compatible bundle
+4. Uploads the bundle to Wasmer Edge app `fps-cv-mcp`
+5. Polls `/healthz` to verify the server is live
+6. Reports success or failure
+
+**Requirements:**
+- `WASMER_TOKEN` secret must be set in this repo's GitHub Settings > Secrets and variables > Actions
+
+### Release Assets
+
+The publish workflow (in the `cv` repository) generates eight stable assets under `releases/latest/download/`:
+
+| Asset | Format | Purpose |
+|-------|--------|---------|
+| `resume.md` | Markdown | Full CV for AI consumption |
+| `resume.tex` | LaTeX (moderncv) | Full CV for local compilation |
+| `resume.html` | HTML | Interactive CV for web browsers |
+| `resume.typst` | Typst (moderner-cv) | Full CV for Typst compilation |
+| `resume.pdf` | PDF | Compiled full CV |
+| `resume-tailored.tex` | LaTeX (tailored) | Tailored template (requires TailoringSpec) |
+| `resume-tailored.typst` | Typst (tailored) | Tailored template (requires TailoringSpec) |
+| `release.json` | JSON | Release metadata and asset manifest |
+
+These assets are **stable and version-free** — they are always available under `releases/latest/download/`.
+
+## cv (Data) Repository Release (CalVer)
+
+The `cv` data repository uses **Calendar Versioning** (CalVer: `YYYY.MM.DD`). Releases are triggered by pushing a CalVer tag from the data repo.
+
+### Workflow
+
+1. **Tag a release in the `cv` repo:**
+   ```bash
+   git tag 2026.09.14
+   git push origin 2026.09.14
+   ```
+
+2. **This triggers `cv`'s `.github/workflows/publish.yml`:**
+   ```yaml
+   on:
+     push:
+       tags:
+         - '[0-9][0-9][0-9][0-9].*'  # CalVer pattern
+   ```
+
+3. **`publish.yml` calls the reusable workflow from `cv-forge`:**
+   ```yaml
+   uses: francisco-perez-sorrosal/cv-forge/.github/workflows/publish.yml@v1
+   with:
+     ref: ${{ github.ref }}
+     data-path: cv-data/
+     deploy-site: true
+     site-app: fps-cv
+     formats: markdown,latex,html,typst,pdf
+   secrets:
+     WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+   ```
+
+4. **The reusable workflow (in `cv-forge`):**
+   - Checks out both `cv` and `cv-forge` repos at the specified refs
+   - Runs `cv-forge render -f all` against `cv-data/`
+   - Compiles the PDF with `latexmk`
+   - Builds `release.json` with asset hashes and URLs
+   - Uploads the eight assets to the GitHub Release
+   - Deploys the HTML site to Wasmer static site app `fps-cv`
+   - Verifies the site is live by probing a known path
+   - Fails unless all steps succeed
+
+### Cross-Repo Contract
+
+| Artifact | Owner | Coupling |
+|----------|-------|----------|
+| `publish.yml@v1` | `cv-forge` | `cv` pins this at `@v1` (moving tag), exact version auto-resolves |
+| `schemas/*.schema.json` | `cv-forge` generates, `cv` mirrors | `cv` CI validates against a local copy (via raw HTTP fetch) |
+| GitHub Release assets | Generated by `cv`'s publish workflow | Served from `releases/latest/download/`; consumed by MCP server |
+
+No credentials cross the repo boundary:
+- `cv` publishes under its own `GITHUB_TOKEN` (provided automatically by GitHub Actions)
+- `cv-forge` has its own `WASMER_TOKEN` for Wasmer deployments
+- Schema drift is detected by `cv` CI, not prevented — a malformed update can be reverted by opening a PR with the correct schema
+
+## Rollback
+
+### cv-forge Rollback
+
+If a `cv-forge` release is bad:
+
+1. **Revert the tag:**
+   ```bash
+   git push -d origin v0.0.6  # delete remote tag
+   git tag -d v0.0.6          # delete local tag
+   ```
+
+2. **Tag the previous good version and push:**
+   ```bash
+   git checkout <previous-commit>
+   git tag v0.0.6-rollback
+   git push origin v0.0.6-rollback
+   ```
+
+3. **Or re-point `v<MAJOR>` to a previous SemVer tag:**
+   ```bash
+   git tag -f v0 v0.0.5
+   git push -f origin v0
+   ```
+
+This will trigger a new deploy of the previous version.
+
+### cv (Data) Rollback
+
+If a CV release is bad:
+
+1. **Revert the commit** that introduced the bad data
+2. **Delete the bad tag:**
+   ```bash
+   git push -d origin 2026.09.14
+   ```
+
+3. **Tag a new CalVer release:**
+   ```bash
+   git tag 2026.09.14-rollback  # or the next date
+   git push origin 2026.09.14-rollback
+   ```
+
+This triggers a new publish with the reverted data.
+
+## Verifying a Deployment
+
+After a release, verify the MCP server is live:
+
 ```bash
-git tag -a v0.0.1 -m "Release version 0.0.1"
-git push origin mcp
-git push origin v0.0.1
+# Check the health endpoint
+curl -s https://fps-cv-mcp.wasmer.app/healthz | jq .
+
+# Expected response:
+{
+  "origin": "release",
+  "release_tag": "v0.0.6",
+  "loaded_at": "2026-09-14T12:34:56Z",
+  "refresh_state": "Fresh",
+  "consecutive_failures": 0
+}
 ```
 
-### Step 3: Monitor Workflow
-- Check GitHub Actions: https://github.com/francisco-perez-sorrosal/cv/actions
-- Verify release: https://github.com/francisco-perez-sorrosal/cv/releases
-
-## Testing Locally
-
-Before creating a release, test the bundle locally:
+Verify the static HTML site:
 
 ```bash
-# Build and test bundle
-make build-mcpb
+curl -s https://fps-cv.wasmer.app/ | head -20
+```
 
-# Test the bundle
-cd dist/mcpb
-unzip fps-cv-mcp-0.0.1.mcpb -d test/
-cd test/
-python3 src/cv_mcp_server/main.py  # Should start without errors
+Verify GitHub Release assets are present:
 
-# Clean up
-cd ../../..
-make clean
+```bash
+curl -I https://github.com/francisco-perez-sorrosal/cv/releases/latest/download/resume.pdf
 ```
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Python Version Mismatch**
-   - Ensure dependencies are built with Python 3.13
-   - Check that `_pydantic_core.cpython-313-darwin.so` exists in bundle
-
-2. **Missing Dependencies**
-   - Run `pixi run update-mcpb-deps` to refresh requirements.txt
-   - Verify all dependencies are in `lib/` directory
-
-3. **Tag Already Exists**
-   - Delete existing tag: `git tag -d v0.0.1 && git push origin :refs/tags/v0.0.1`
-   - Or use a different version number
-
-4. **Workflow Failures**
-   - Check GitHub Actions logs for detailed error messages
-   - Ensure all required secrets are configured (GITHUB_TOKEN is automatic)
-
-### Debug Commands
+### Release Fails with "working tree not clean"
 
 ```bash
-# Test version extraction
-python3 -c "import json; print(json.load(open('manifest.json'))['version'])"
-
-# Test bundle filename generation
-python3 -c "import json; print(f\"{json.load(open('manifest.json'))['name']}-{json.load(open('manifest.json'))['version']}.mcpb\")"
-
-# Test dependency installation
-python3.13 -m pip install -r requirements.txt --target test-lib/
+git status
+git stash push -u -m "temp-wip"
+scripts/release.sh patch
+git stash pop
 ```
 
-## Release Checklist
+### Release Tags But Doesn't Push
 
-Before creating a release:
+```bash
+git push origin main
+git push origin v0.0.6 v0
+```
 
-- [ ] All changes committed to `mcp` branch
-- [ ] Working directory is clean (`git status`)
-- [ ] Tests pass locally (`pixi run start` works)
-- [ ] MCPB bundle builds successfully (`make build-mcpb`)
-- [ ] Version number follows semantic versioning
-- [ ] Release notes are meaningful
+### Deploy-MCP Never Starts
 
-After release:
-- [ ] GitHub Actions workflow completed successfully
-- [ ] Release appears on GitHub releases page
-- [ ] MCPB bundle is attached to release
-- [ ] Bundle size is reasonable (~30MB)
-- [ ] Test installation in Claude Desktop
+Check `.github/workflows/deploy-mcp.yml` logs:
+1. Open the GitHub Actions tab for this repo
+2. Click on the failed run
+3. Check the "Build and deploy" job for WASIX ceiling violations or `anybuild` errors
+4. See `FEEDBACK.md` for known Wasmer issues
+
+### HTML Site Doesn't Update After Publish
+
+The static site app (`fps-cv`) is deployed via the reusable `publish.yml` workflow, not by `deploy-mcp.yml`. Verify:
+1. The `cv` repo's publish workflow completed (check Actions tab)
+2. The reusable workflow was invoked with `deploy-site: true`
+3. Run `curl https://fps-cv.wasmer.app/` to see if the content is fresh
+
+For additional support, see `FEEDBACK.md` for known issues and friction reports.

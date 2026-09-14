@@ -1,487 +1,266 @@
-# Francisco Perez-Sorrosal CV - Development Guide
+# cv-forge — Developer Guide
 
-This repository contains Francisco Perez-Sorrosal's CV in multiple formats and implementations.
+## Setup
 
-## Repository Structure
+### Requirements
 
-### Main Branch - LaTeX CV
+- Python 3.13
+- pixi (package and environment manager)
+- For PDF compilation: `latexmk` (macOS: `brew install latexmk`)
+- For deployment: `wasmer` CLI (>=7) and `anybuild` (>=0.28.4)
 
-The main branch contains the authoritative LaTeX CV source.
-
-#### Requirements (macOS)
-
-- LaTeX distribution (MacTeX recommended)
-
-MacTeX includes:
-
-1. `pdflatex` a common compiler for converting LaTeX files into PDF
-2. `latexmk` a Perl script that runs pdflatex plus other necessary tools like BibTeX or Biber
-
-#### Installing MacTeX with Homebrew
+### Installation
 
 ```bash
-brew install --cask mactex
+pixi install                          # install dependencies and set up environment
+pixi run -e dev python -m pytest      # verify test suite runs (expects CV_DATA_DIR set or cv-data/ sibling dir)
 ```
 
-Or download from https://tug.org/mactex/
+## Repository Layout
 
-#### CV Compilation
+```
+src/cv_forge/
+  models/          # Pydantic data models (Resume, SemanticOverlay, TailoringSpec)
+  render/          # Jinja2 renderers and templates (markdown, LaTeX, HTML, Typst)
+  data/            # Data loading and refresh (snapshot, provider, release fetching)
+  mcp/             # MCP server, resources, tools, ASGI app
+  cli/             # Console script: render, validate, export-schemas, fetch-snapshot, serve
+  prompts/         # YAML prompt templates
+plugins/cv/        # Consumer plugin: MCP declaration + skills
+plugins/cv-forge/  # Maintainer plugin: edit, publish, deploy skills
+schemas/           # Generated JSON schemas (source of truth for cv repo)
+scripts/           # Helper scripts (release.sh, deploy.sh, check_wasix_ceilings.py)
+.github/workflows/ # CI/CD: publish, deploy-mcp, ci, claude-code-review
+```
+
+## CLI Reference
 
 ```bash
-# Compile CV to PDF with latexmk (recommended) (-c cleans auxiliary files)
-latexmk -pdf -c FranciscoPerezSorrosal_CV_English.tex
-
-# or compile it with pdflatex
-pdflatex FranciscoPerezSorrosal_CV_English.tex
+pixi run cv-forge --version                   # Show version (from pyproject.toml)
+pixi run cv-forge --help                      # Show all subcommands
 ```
 
-### MCP Branch - Python MCP Server
+### Render
 
-The MCP branch contains a Python-based Model Context Protocol server implementation. It serves CV content in markdown, PDF, LaTeX, HTML, and Typst formats via 16 tools. Jinja2 templates in `src/cv_mcp_server/templates/` drive all output formats:
-
-- `cv.md.j2` — markdown template (uses `_work_entry.md.j2` partial)
-- `cv.tex.j2` — LaTeX template using moderncv (uses `_preamble.tex.j2` and `_work_entry.tex.j2` partials)
-- `cv_tailored.tex.j2` — tailored LaTeX template with dynamic section ordering, entry filtering, and profile override
-- `cv.html.j2` — self-contained interactive HTML (uses `_cv_styles.css.j2` and `_cv_scripts.js.j2` partials)
-- `cv.typ.j2` — Typst template using moderner-cv (uses `_preamble.typ.j2` and `_work_entry.typ.j2` partials)
-- `cv_tailored.typ.j2` — tailored Typst template with dynamic section ordering, entry filtering, and profile override
-
-Two agent skills extend the server:
-- **`cv-analyst`** — general CV retrieval, summarization, and formatting
-- **`cv-tailoring`** — job-targeted CV tailoring that produces page-constrained (2-3 pages) PDF output via LaTeX or Typst backends
-
-#### Development Setup
+Render CV data to one or more output formats.
 
 ```bash
-# Switch to MCP branch
-git checkout mcp
-
-# Install dependencies using pixi
-pixi install
-
-# Run the MCP server
-pixi run cv-mcp-server
+pixi run cv-forge render -f <format> [--data-dir <path>] [-o <output-dir>] [--json]
 ```
 
-#### Available Pixi Commands
+**Formats:** `markdown`, `latex`, `html`, `typst`, `pdf`, `all`
+
+**Examples:**
+```bash
+# Render all formats to ./rendered-cv/
+pixi run cv-forge render -f all --data-dir ../cv/cv-data
+
+# Render PDF to stdout (exit 0 on success, exit 1 on failure)
+pixi run cv-forge render -f pdf --data-dir ../cv/cv-data -o - 2>/dev/null | file -
+
+# Render with JSON summary (includes sha256 per output)
+pixi run cv-forge render -f all --json
+```
+
+**Exit codes:** 0 = success, 1 = error, 2 = not implemented
+
+### Validate
+
+Check a data directory against schemas and cross-references.
 
 ```bash
-# Primary commands
-pixi run cv-mcp-server    # Main MCP server command (project script)
-pixi run mcps            # Direct Python module execution
-pixi run start           # Alias for mcps
-
-# LaTeX generation
-pixi run generate-tex    # Generate LaTeX CV (.tex) from YAML data
-
-# MCPB (MCP Bundle) tasks
-pixi run python-bundle   # Build Python wheel package to dist/wheel/
-pixi run update-mcpb-deps # Update dependencies and export requirements.txt
-pixi run mcp-bundle      # Install dependencies to lib/ directory
-pixi run pack            # Package bundle into .mcpb file
-pixi run clean-bundles   # Remove temporary files and bundles
-
-# Development tasks
-pixi run test            # Run tests (if available)
-pixi run lint            # Code linting (if available)
-pixi run format          # Code formatting (if available)
-pixi run build           # Build package (if available)
+pixi run cv-forge validate --data-dir <path>
 ```
 
-#### Transport Configuration
+Validates `resume.yaml` and `resume-semantics.yaml` against the generated schemas and enforces cross-references (entry IDs, topic names, relationship targets).
 
-The server supports multiple transport protocols:
+**Exit codes:** 0 = valid, 1 = invalid
 
-- **`stdio`** (default): Standard input/output for local development
-- **`streamable-http`**: HTTP-based transport for web clients
-- **`sse`**: ⚠️ **DEPRECATED** - No longer supported
+### Export Schemas
 
-Set transport via environment variable:
-```bash
-TRANSPORT=stdio pixi run cv-mcp-server              # Default
-TRANSPORT=streamable-http pixi run cv-mcp-server    # Web/HTTP clients
-```
-
-#### Project Scripts
-
-The `pyproject.toml` defines console script entry points:
-
-```toml
-[project.scripts]
-cv-mcp-server = "cv_mcp_server.main:main"
-```
-
-This allows running the server via pixi after the package is installed in editable mode.
-
-#### Dev Local Installation for Claude Desktop/Code (without DXT)
-
-The recommended local development setup uses pixi:
+Generate `schemas/*.schema.json` from the Pydantic models.
 
 ```bash
-# Install plugin + local MCP via pixi (stdio transport)
-make install-claude-code
-
-# Or use the install script directly
-./install.sh code
+pixi run cv-forge export-schemas
 ```
 
-For manual configuration, add this to your Claude Desktop (`claude_desktop_config.json`) or Code MCP server configurations:
+Outputs two JSON Schema files:
+- `schemas/resume.schema.json`
+- `schemas/semantics.schema.json`
+
+These are committed to git and mirrored into the `cv` repository for validation.
+
+### Fetch Snapshot
+
+Download a GitHub Release snapshot into a directory (for testing release-based data loading).
+
+```bash
+pixi run cv-forge fetch-snapshot [--tag <tag>] [--output <dir>]
+```
+
+**Defaults:** `--tag latest`, `--output .`
+
+Downloads the eight release assets into the specified directory.
+
+### Serve
+
+Run the MCP server locally.
+
+```bash
+pixi run cv-forge serve [--transport stdio|streamable-http] [--host <host>] [--port <port>]
+```
+
+**Defaults:** `--transport stdio`, `--host 127.0.0.1`, `--port 8000`
+
+**Examples:**
+```bash
+# Stdio mode (for Claude Code)
+pixi run cv-forge serve --transport stdio
+
+# HTTP mode (for browser testing)
+pixi run cv-forge serve --transport streamable-http
+# Then: curl http://127.0.0.1:8000/mcp/tools/list
+```
+
+## Data Layer and Environment
+
+### Environment Variables
+
+- **`CV_DATA_DIR`** — Path to a local `cv-data` directory. If set, the server loads from disk instead of fetching from GitHub Releases.
+- **`WASMER_TOKEN`** — Secret for Wasmer Edge deployments (only needed for `scripts/deploy.sh` or `deploy-mcp.yml`).
+
+### Startup Behavior
+
+1. MCP server starts with a **baked snapshot** of the latest released CV data (hardcoded at build time via `anybuild`)
+2. On first request, the server is immediately ready to answer (no network dependency)
+3. Background refresh loop (every 15 minutes) checks GitHub Releases for updates
+4. If an update is found, a new snapshot is fetched and swapped atomically
+5. If GitHub is unreachable or a release is malformed, the server degrades to stale data (not failure)
+
+**Health check endpoint:** `GET /healthz`
+
+Returns 200 only when a validated snapshot is loaded. Body is JSON:
 
 ```json
 {
-  "fps_cv_mcp": {
-    "command": "pixi",
-    "args": ["run", "mcps", "--transport", "stdio"],
-    "cwd": "/path/to/cv"
-  }
+  "origin": "release|local",
+  "release_tag": "v0.1.0",
+  "loaded_at": "2026-09-14T12:34:56Z",
+  "refresh_state": "Fresh|Stale|Starting",
+  "consecutive_failures": 0
 }
 ```
 
-#### Remote Configuration for Claude Desktop/Code
-
-For connecting to a remote MCP server:
-
-```json
-{
-  "fps_cv_mcp": {
-    "command": "npx",
-    "args": ["mcp-remote", "http://localhost:10000/mcp"]
-  }
-}
-```
-
-Then check it exercising the MCP inspector with:
-
-```sh
-DANGEROUSLY_OMIT_AUTH=true  npx @modelcontextprotocol/inspector
-```
-
-And setting up the Transport Type to `Streamable HTTP` and the URL to `http://localhost:10000/mcp`. Then press the `Connect` button to connect the inspector to the server.
-
-> **Note**: Update the host and port as needed for your deployment.
-
-Currently I'm using `render.com` to host the MCP server. The remote MCP configuration is in `config/cv_mcp.json`. It uses `streamable-http` as transport protocol, deprecating `sse`.
-
-There's a script to install the Claude Desktop or Code config files in the root directory:
-
-```sh
-./install.sh code            # local: local plugin + local MCP via pixi (dev mode)
-./install.sh code remote     # remote: marketplace plugin (remote MCP built-in)
-./install.sh desktop         # local: build MCPB + skill, show install instructions
-./install.sh desktop remote  # remote: build skill + inject MCP config into Claude Desktop
-```
-
-This will make the MCP server accessible at `https://fps-cv.onrender.com/mcp". You can check it also with the MCP inspector:
-
-```sh
-DANGEROUSLY_OMIT_AUTH=true  npx @modelcontextprotocol/inspector
-```
-
-And setting up the Transport Type to `Streamable HTTP` and the URL to `http://fps-cv.onrender.com/mcp"`. Then press the `Connect` button to connect the inspector to the server.
-
-Render requires `requirements.txt` to be present in the root directory. You can generate it using:
+### Testing
 
 ```bash
-uv pip compile pyproject.toml > requirements.txt
+pixi run -e dev python -m pytest                    # full suite
+pixi run -e dev python -m pytest -m 'not integration'  # skip integration tests
+pixi run -e dev python -m pytest tests/cli/         # CLI tests only
+CV_DATA_DIR= pixi run -e dev python -m pytest       # unset CV_DATA_DIR; integration tests auto-skip
 ```
 
-Also requires `runtime.txt` to be present in the root directory with the Python version specified:
+Integration tests require the `cv-data/` directory at the project root (or at `CV_DATA_DIR`); they gracefully skip if it's absent.
 
-```txt
-python-3.11.11
-```
+## Wasmer Deployment
 
-Remember also to set the environment variables in the render.com dashboard:
+### Deployment Workflow
+
+Two paths to deploy the MCP server to Wasmer Edge:
+
+1. **Automated (GitHub Actions):** `.github/workflows/deploy-mcp.yml` runs on `v*` tags. Requires `WASMER_TOKEN` secret in this repo.
+2. **Manual (workstation):** `scripts/deploy.sh` stages files, runs `anybuild`, and uploads to Wasmer.
+
+### Using `scripts/deploy.sh`
 
 ```bash
-TRANSPORT=streamable-http
-PORT=10000
+./scripts/deploy.sh [--dry-run]
 ```
 
-#### Create MCPB package
+**Requirements:**
+- `wasmer` CLI (>=7): https://docs.wasmer.io/developers/cli
+- `anybuild` (>=0.28.4): included in `wasmer` installation
+- `WASMER_TOKEN` environment variable set to a Wasmer API token
 
-The project supports creating MCP Bundle (MCPB) packages for easy distribution and installation. MCPB is the standard format for distributing MCP servers as portable, installable bundles.
+**What it does:**
+1. Stages all tracked files via `git ls-files`
+2. Verifies the working tree is clean (no untracked/uncommitted changes)
+3. Runs `anybuild build` to prepare the bundle for Wasmer Edge
+4. Uploads the bundle to Wasmer Edge app `fps-cv-mcp`
+5. Waits for the deployment to be live
+6. Probes `/healthz` to verify the MCP server is responsive
+7. Prints the public URL
 
-##### Prerequisites
-
-Ensure you have all required files in the project root:
-- `manifest.json` - MCPB manifest (already created)
-- `requirements.txt` - Python dependencies (generate if missing)
-- `runtime.txt` - Python version specification (generate if missing)
-- `FranciscoPerezSorrosal_CV_English.pdf` - CV PDF (optional, will use remote if missing)
-
+**Example:**
 ```bash
-# Generate requirements.txt if missing
-uv pip compile pyproject.toml > requirements.txt
+export WASMER_TOKEN=<your-token>
+./scripts/deploy.sh
 
-# Create runtime.txt if missing
-echo "python-3.11.11" > runtime.txt
+# Or with dry-run to see what would happen:
+./scripts/deploy.sh --dry-run
 ```
 
-##### Build MCPB Bundle
+### Wasmer Configuration
 
-Install the CLI:
+**App names:**
+- `fps-cv-mcp` — MCP server (Python, WASIX runtime)
+- `fps-cv` — Static HTML CV site (served alongside the MCP app)
 
-```sh
-npm install -g @anthropic-ai/mcpb
-```
+**Environment variables (in Wasmer dashboard or via `wasmer app secrets`):**
+- `WASMER_TOKEN` — Required for CI deployments
 
-**Important**: The MCPB bundle dependencies are built using the system Python to ensure compatibility with Claude Desktop. The build process automatically uses the appropriate Python version to match the target deployment environment.
+**Dependency ceilings (pinned in `pyproject.toml`):**
+- `pydantic>=2.12,<2.13.5` — WASIX index caps at `2.13.4`
+- `cryptography>=43,<50.0.1` — Required by `mcp[cli]`'s `pyjwt[crypto]`
+- `cffi>=2.1,<2.1.1` — Required by cryptography
 
-Use the pixi tasks to create the MCPB bundle:
-
-```bash
-# Update dependencies and export requirements.txt
-pixi run update-mcpb-deps
-
-# Install dependencies to lib/ directory (uses Python 3.13)
-pixi run mcp-bundle
-
-# Package into .mcpb file
-pixi run pack
-
-# Clean up temporary files (optional)
-pixi run clean-bundles
-```
-
-Or use the Makefile for convenience:
-```bash
-make build-wheel     # Build Python wheel package
-make build-mcpb      # Runs: pixi install && pixi run update-mcpb-deps && pixi run mcp-bundle && pixi run pack
-make clean           # Removes dist/ and lib/ directories
-```
-
-This creates `fps-cv-mcp-0.0.1.mcpb` ready for distribution.
-
-##### Bundle Contents
-
-The MCPB bundle includes:
-- `src/` - Python source code
-- `lib/` - Bundled Python dependencies (built for target Python version)
-- `manifest.json` - Bundle metadata and configuration (includes server startup configuration)
-- `requirements.txt` - Python dependencies list
-- `FranciscoPerezSorrosal_CV_English.pdf` - CV PDF (if available)
-
-##### Installation and Usage
-
-Users can install the bundle using MCPB tooling (no additional prerequisites required - all dependencies are bundled):
-
-```bash
-# Install MCPB CLI tool
-npm install -g @anthropic-ai/mcpb
-
-# Install the bundle
-mcpb install fps-cv-mcp-0.0.1.mcpb
-
-# Or for development/testing
-mcpb install --dev fps-cv-mcp-0.0.1.mcpb
-```
-
-##### Testing the Bundle
-
-Before distribution, test the bundle locally:
-
-```bash
-# Extract and test bundle
-unzip fps-cv-mcp-0.0.1.mcpb -d test-bundle/
-cd test-bundle/
-
-# Test server startup using the MCP configuration from manifest.json
-python3 src/cv_mcp_server/main.py
-
-# Test with MCP inspector
-DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector
-```
-
-##### Available MCPB Tasks
-
-```bash
-pixi run python-bundle    # Build Python wheel package to dist/wheel/
-pixi run update-mcpb-deps # Update dependencies and export requirements.txt
-pixi run mcp-bundle       # Install dependencies to lib/ directory (uses Python 3.13)
-pixi run pack             # Package bundle into .mcpb file
-pixi run clean-bundles    # Remove temporary files and bundles
-```
-
-#### Automated Releases
-
-The project includes GitHub Actions workflows for automated MCPB bundle releases.
-
-##### Creating a Release
-
-Use the release script for easy version management:
-
-```bash
-# Create a new release (updates versions and creates git tag)
-./scripts/release.sh 0.0.1
-
-# This will:
-# 1. Update manifest.json and pyproject.toml versions
-# 2. Commit the changes
-# 3. Create and push a git tag (v0.0.1)
-# 4. Trigger GitHub Actions to build and release the MCPB bundle
-```
-
-##### Manual Release Process
-
-If you prefer manual control:
-
-```bash
-# 1. Update versions in manifest.json and pyproject.toml
-# 2. Commit changes
-git add manifest.json pyproject.toml
-git commit -m "chore: bump version to 0.0.1"
-
-# 3. Create and push tag
-git tag -a v0.0.1 -m "Release version 0.0.1"
-git push origin mcp
-git push origin v0.0.1
-```
-
-##### GitHub Workflows
-
-- **`release-mcpb.yml`**: Builds and releases MCPB bundle when tags are pushed
-- **`check-mcpb-creation.yml`**: Tests MCPB bundle build on pull requests and pushes
-
-The release workflow automatically:
-- Builds dependencies with Python 3.13 for Claude Desktop compatibility
-- Creates versioned MCPB bundle (`fps-cv-mcp-{version}.mcpb`)
-- Publishes GitHub release with bundle attached
-- Provides detailed release notes and installation instructions
-
-#### Publish to Github's MCP Server Registry
-
-**Install tool**
-
-```sh
-brew install mcp-publisher
-```
-
-**Create `server.json`**
-
-```sh
-# In the project dir
-mcp-publisher init
-```
-
-The output is a json file `server.json` with content similar to this:
-
-```json
-{
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
-  "name": "io.github.francisco-perez-sorrosal/cv",
-  "description": "An MCP server that provides Francisco Perez-Sorrosal's CV",
-  "status": "active",
-  "repository": {
-    "url": "https://github.com/francisco-perez-sorrosal/cv",
-    "source": "github"
-  },
-  "version": "0.0.1",
-  "packages": [
-    {
-      "registryType": "mcpb",
-      "identifier": "https://github.com/francisco-perez-sorrosal/cv/releases/download/v0.0.1/fps-cv-mcp-0.0.1.mcpb",
-      "fileSha256": "d01ccdbbea56702215a8015ad19c12f5681b61c1fdaeaa258c88f657a6f02bd6"
-    }
-  ]
-}
-```
-
-As depicted above, for a bundle that is going to be stored as a release in github you have to generate its sha256:
-
-```sh
-openssl dgst -sha256 fps-cv-mcp-0.0.1.mcpb
-```
-
-**Publish**
-
-```sh
-# Login to github
-mcp-publisher login github  # for io.github.* or other method ([see doc](https://github.com/modelcontextprotocol/registry/blob/main/docs/guides/publishing/publish-server.md))
-# Publish to github
-mcp-publisher publish
-```
-
-**Check Published Package**
-
-```sh
-curl "https://registry.modelcontextprotocol.io/v0/servers?search=fps-cv-mcp"
-```
-
-#### CV Tailoring Architecture
-
-The tailoring pipeline bridges the `cv-tailoring` skill (LLM intelligence) and the MCP server (rendering mechanics) through a `TailoringSpec` data contract.
-
-```
-Job Description
-    |
-    v
-[cv-tailoring skill]
-    |-- Retrieves CV data via MCP tools (get_cv, get_skill_profile, query_by_topic)
-    |-- Analyzes job requirements vs. candidate profile
-    |-- Generates a TailoringSpec JSON
-    |
-    v
-[MCP tool: get_tailored_cv(tailoring_config, format?)]
-    |-- Validates TailoringSpec via Pydantic
-    |-- Calls render_tailored_latex() or render_tailored_typst()
-    |-- Returns compilable source (LaTeX or Typst)
-    |
-    v
-[cv-tailoring skill: compilation]
-    |-- Writes .tex or .typ to tmp/
-    |-- Runs pdflatex (twice) or typst compile (once)
-    |-- Error correction loop (max 2 retries)
-    |-- Presents compiled PDF
-```
-
-Key source files:
-
-| File | Purpose |
-|------|---------|
-| `src/cv_mcp_server/models/tailoring.py` | `TailoringSpec`, `SectionDirective`, `EntryEmphasis`, `KeywordHighlight` Pydantic models |
-| `src/cv_mcp_server/renderers.py` | `render_tailored_latex()` and `render_tailored_typst()` — filter entries, reorder sections, render template |
-| `src/cv_mcp_server/templates/cv_tailored.tex.j2` | LaTeX template with dynamic section iteration from `included_sections` |
-| `src/cv_mcp_server/templates/cv_tailored.typ.j2` | Typst template with dynamic section iteration from `included_sections` |
-| `src/cv_mcp_server/templates/_preamble.tex.j2` | Shared LaTeX preamble (packages, moderncv setup, custom commands) |
-| `src/cv_mcp_server/templates/_preamble.typ.j2` | Shared Typst preamble (moderner-cv import, page setup) |
-| `skills/cv-tailoring/SKILL.md` | Skill definition with 7-step workflow |
-| `skills/cv-tailoring/references/methodology.md` | 4-phase methodology (analysis, repositioning, evaluation, rendered output) |
-
-The `TailoringSpec` controls:
-- **Section ordering** — `section_order` with `SectionDirective(section_name, include, position)`
-- **Entry filtering** — `entry_emphasis` with `EntryEmphasis(entry_id, weight, reason)` where `weight=0` omits
-- **Keywords** — `keywords` with `KeywordHighlight(term, weight)` for job-relevant terms (metadata for skill analysis; not rendered in LaTeX)
-- **Profile override** — `profile_override` replaces the generic summary with a role-targeted one
-- **Page budget** — `max_pages` (1-3, default 2)
-
-#### Testing
-
-```bash
-pixi run -e dev python -m pytest                    # all tests
-pixi run -e dev python -m pytest tests/test_models_tailoring.py  # tailoring model tests
-pixi run -e dev python -m pytest tests/test_renderers.py -k tailored  # tailored rendering tests
-```
+Run `scripts/check_wasix_ceilings.py` to validate pins before deploying.
 
 ## Development Workflow
 
-### Working on LaTeX CV (Main Branch)
+### Adding a New Render Format
 
-1. Make changes to `FranciscoPerezSorrosal_CV_English.tex`
-2. Test compilation: `latexmk -pdf -c FranciscoPerezSorrosal_CV_English.tex`
-3. Commit changes to main branch
+1. Add a template file `src/cv_forge/render/templates/cv.<ext>.j2`
+2. Add a renderer function in `src/cv_forge/render/renderers.py`
+3. Wire it into the `cli/main.py` render subcommand
+4. Add tests in `tests/cli/test_render.py`
+5. Update `.github/workflows/publish.yml` to include the new format in release assets
 
-### Working on MCP Server (MCP Branch)
+### Adding a New Tool or Resource
 
-1. Switch to MCP branch: `git checkout mcp`
-2. Make changes to Python code in `src/cv_mcp_server/`
-3. Test locally: `pixi run cv-mcp-server`
-4. Commit changes to MCP branch
+1. Create the tool/resource in a new or existing file under `src/cv_forge/mcp/tools/` or directly in `resources.py`
+2. Use the `@mcp.tool()` or `@mcp.resource()` decorator
+3. The decorator automatically registers it (via `pkgutil` walk in `main.py`)
+4. Add tests in `tests/mcp/`
 
-### Branch Synchronization
+### Running Tests Locally
 
-The repository uses automated CI/CD workflows to keep branches synchronized. See [CI/CD Documentation](README_CICD.md) for details.
+Use the `-e dev` flag to ensure `pytest` and other dev tools resolve correctly:
 
-## Documentation
-1. [User Guide](README_USER.md)
-2. [CI/CD Documentation](README_CICD.md)
+```bash
+pixi run -e dev python -m pytest tests/cli/test_render.py::TestRender::test_render_pdf -v
+```
+
+### Linting and Formatting
+
+The project uses `ruff` for linting and formatting:
+
+```bash
+pixi run ruff check src/                  # lint
+pixi run ruff format src/                 # auto-format
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**`pyenv: <tool>: command not found` during tests:**
+- The `-e dev` flag scopes `pytest` to the pixi dev environment. Use `pixi run -e dev python -m pytest`, not bare `pytest`.
+
+**`CV_DATA_DIR` unset and no `cv-data/` directory found:**
+- Integration tests gracefully skip when the CV data is unavailable. Set `CV_DATA_DIR` to a path, or clone the `cv` repository as a sibling directory.
+
+**Wasmer deployment fails with WASIX ceiling exceeded:**
+- Check `scripts/check_wasix_ceilings.py` output. Pydantic, cryptography, or cffi may need a downgrade. See `FEEDBACK.md` for known issues.
+
+For additional support or to file a Wasmer-related friction report, see `FEEDBACK.md`.

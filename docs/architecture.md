@@ -2,23 +2,23 @@
 
 <!-- Developer navigation guide. Every component name and file path in this document has been
      verified against the codebase. Only components that exist on disk are included.
-     For design rationale, planned components, and architectural evolution, see .ai-state/DESIGN.md.
+     For design rationale and architectural evolution, see .ai-state/DESIGN.md.
      Maintained by pipeline agents: created by systems-architect, updated by implementer,
      verified by doc-engineer at pipeline checkpoints. -->
 
-> **A split is in flight.** This guide describes the code **as it exists on disk today**, on the `mcp` lineage, where the CV data and the machinery still share one repository. The target architecture — a data-only `cv` repo and a `cv-forge` machinery repo, with the package renamed to `cv_forge` and the data layer rewritten to source from GitHub Release assets — is documented in [`.ai-state/DESIGN.md`](../.ai-state/DESIGN.md), where each component carries a `Status` of `Built` or `Designed`. Read that document for where things are going; read this one to find things now.
+> **M1 restructuring complete.** This guide describes the code **as it exists on disk today** in `cv-forge`. The split into a data-only `cv` repo and this machinery repo is complete in code; repository creation and cutover are pending. For design rationale and future-planned components, see [`.ai-state/DESIGN.md`](../.ai-state/DESIGN.md).
 
 ## 1. Overview
 
 | Attribute | Value |
 |-----------|-------|
-| **System** | cv_mcp_server |
-| **Type** | MCP server + document renderer, distributed as a Claude Code plugin |
-| **Language / Framework** | Python 3.13 / `mcp` 1.x (`FastMCP`), Jinja2, Pydantic v2 |
-| **Architecture pattern** | Layered package: Pydantic models → store → renderers → MCP surface, with a script-level CLI driver |
-| **Last verified against code** | 2026-09-13 |
+| **System** | cv-forge |
+| **Type** | MCP server + document renderer + CLI + two Claude Code plugins |
+| **Language / Framework** | Python 3.13 / `mcp` 2.x (`MCPServer`), Jinja2, Pydantic v2 |
+| **Architecture pattern** | Layered package: `models` and `render` know nothing about paths or the network; `data` owns both; `mcp` and `cli` are the two drivers |
+| **Last verified against code** | 2026-09-14 |
 
-One structured YAML description of a CV (`cv-data/resume.yaml`), plus a semantic overlay that annotates it with topics, cross-entry relationships and skill proficiency (`cv-data/resume-semantics.yaml`), is loaded once into a `ResumeStore` and then exposed two ways: as an MCP tool and resource surface for agents, and as four rendered document formats (markdown, LaTeX, HTML, Typst) for humans. Entry IDs follow a `<type>-<slug>` convention (`work-yahoo-kgs-2023`, `pub-htl-acl-2019`) and are the join key between the resume and its overlay.
+The CV *data* lives in a separate `cv` repository. This codebase provides: an MCP server that serves CV content from GitHub Release assets (markdown, PDF, LaTeX, HTML, Typst, JSON) via 16 tools and 17 resources; a CLI for rendering, validation, and local development; two Claude Code plugins (consumer-facing and maintainer-facing); and publishing/deployment workflows.
 
 ## 2. System Context
 
