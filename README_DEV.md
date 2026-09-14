@@ -45,10 +45,12 @@ pixi run cv-forge --help                      # Show all subcommands
 Render CV data to one or more output formats.
 
 ```bash
-pixi run cv-forge render -f <format> [--data-dir <path>] [-o <output-dir>] [--json]
+pixi run cv-forge render -f <format> [--data-dir <path>] [-o <output-dir>] [--json] [--release-tag <tag>]
 ```
 
 **Formats:** `markdown`, `latex`, `html`, `typst`, `pdf`, `all`
+
+**`--release-tag <tag>`** — embeds the tag in the HTML output's `<meta name="cv-release-tag" content="<tag>">` and footer line; ignored by every other format. The publish workflow passes the pushed `cv` ref here so the deployed site's liveness check (REQ-06) can assert the release actually landed.
 
 **Examples:**
 ```bash
@@ -107,10 +109,10 @@ Downloads the eight release assets into the specified directory.
 Run the MCP server locally.
 
 ```bash
-pixi run cv-forge serve [--transport stdio|streamable-http] [--host <host>] [--port <port>]
+pixi run cv-forge serve [--transport stdio|http] [--port <port>] [--data-dir <path>]
 ```
 
-**Defaults:** `--transport stdio`, `--host 127.0.0.1`, `--port 8000`
+**Defaults:** `--transport stdio`, `--port 10000` (or `$PORT`/`$FASTMCP_PORT`). No `--host` flag — bind host is the `HOST` environment variable, default `0.0.0.0`.
 
 **Examples:**
 ```bash
@@ -118,8 +120,8 @@ pixi run cv-forge serve [--transport stdio|streamable-http] [--host <host>] [--p
 pixi run cv-forge serve --transport stdio
 
 # HTTP mode (for browser testing)
-pixi run cv-forge serve --transport streamable-http
-# Then: curl http://127.0.0.1:8000/mcp/tools/list
+pixi run cv-forge serve --transport http
+# Then: curl http://localhost:10000/mcp -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 ## Data Layer and Environment
@@ -143,13 +145,17 @@ Returns 200 only when a validated snapshot is loaded. Body is JSON:
 
 ```json
 {
-  "origin": "release|local",
-  "release_tag": "v0.1.0",
+  "status": "ok",
+  "origin": {"kind": "release", "tag": "2026.09.14", "published_at": "2026-09-14T12:00:00Z"},
+  "release_tag": "2026.09.14",
   "loaded_at": "2026-09-14T12:34:56Z",
-  "refresh_state": "Fresh|Stale|Starting",
+  "refresh_state": "fresh",
+  "cv_forge_version": "0.0.5",
   "consecutive_failures": 0
 }
 ```
+
+`refresh_state` is one of `pinned` (`CV_DATA_DIR` set, no refresh runs), `fresh`, or `stale` (`last_error` present, `consecutive_failures > 0`); `origin.kind` is one of `local_dir`, `release`, `baked`.
 
 ### Testing
 
@@ -211,7 +217,7 @@ export WASMER_TOKEN=<your-token>
 
 **Dependency ceilings (pinned in `pyproject.toml`):**
 - `pydantic>=2.12,<2.13.5` — WASIX index caps at `2.13.4`
-- `cryptography>=43,<50.0.1` — Required by `mcp[cli]`'s `pyjwt[crypto]`
+- `cryptography>=43,<50.0.1` — Required by `mcp`'s `pyjwt[crypto]`
 - `cffi>=2.1,<2.1.1` — Required by cryptography
 
 Run `scripts/check_wasix_ceilings.py` to validate pins before deploying.
@@ -230,7 +236,7 @@ Run `scripts/check_wasix_ceilings.py` to validate pins before deploying.
 
 1. Create the tool/resource in a new or existing file under `src/cv_forge/mcp/tools/` or directly in `resources.py`
 2. Use the `@mcp.tool()` or `@mcp.resource()` decorator
-3. The decorator automatically registers it (via `pkgutil` walk in `main.py`)
+3. The decorator automatically registers it (via a `pkgutil` walk over `cv_forge.mcp.tools` in `mcp/server.py`)
 4. Add tests in `tests/mcp/`
 
 ### Running Tests Locally

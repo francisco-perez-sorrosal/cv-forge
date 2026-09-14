@@ -40,17 +40,17 @@ pixi run -e dev python -m pytest             # run the test suite (dev environme
 
 Each subcommand supports `--help` and `--json` for machine-readable output (where applicable):
 
-- `render -f <fmt|all> [-o <dir>] --data-dir <dir>` — Render CV data to markdown, LaTeX, HTML, Typst, or PDF. PDF requires `latexmk`.
+- `render -f <fmt|all> [-o <dir>] --data-dir <dir> [--release-tag <tag>]` — Render CV data to markdown, LaTeX, HTML, Typst, or PDF. PDF requires `latexmk`. `--release-tag` embeds the tag in the HTML output only (`<meta name="cv-release-tag">`).
 - `validate --data-dir <dir>` — Check data directory against schemas and cross-references.
 - `export-schemas` — Generate `schemas/*.schema.json` from Pydantic models.
 - `fetch-snapshot [--tag <release-tag>] [--output <dir>]` — Download a GitHub Release snapshot into a directory.
-- `serve [--transport stdio|streamable-http] [--host <host>] [--port <port>]` — Run the MCP server locally.
+- `serve [--transport stdio|http] [--port <port>]` — Run the MCP server locally. Bind host comes from the `HOST` env var (default `0.0.0.0`), not a flag.
 
 ### Development
 
 ```bash
-pixi run mcps                                    # deprecated; use `cv-forge serve --transport stdio`
-pixi run cv-forge serve --transport streamable-http   # local server on http://127.0.0.1:8000/mcp
+pixi run mcps                            # alias for `cv-forge serve` (stdio)
+pixi run cv-forge serve --transport http --port 10000   # local server on http://localhost:10000/mcp
 ```
 
 ### Release
@@ -114,7 +114,7 @@ Marketplace entries carry no `version` field; version is propagated from `pyproj
 
 The MCP server runs on Wasmer Edge (WASIX runtime). Three dependencies are pinned to ceiling versions due to WASIX package index availability:
 - `pydantic>=2.12,<2.13.5` — WASIX index caps at `2.13.4`; ceiling is the published max, not a compat concern
-- `cryptography>=43,<50.0.1` — Required by `mcp[cli]`'s `pyjwt[crypto]`
+- `cryptography>=43,<50.0.1` — Required by `mcp`'s `pyjwt[crypto]`
 - `cffi>=2.1,<2.1.1` — Required by cryptography
 
 `scripts/check_wasix_ceilings.py` validates the ceilings at CI time.

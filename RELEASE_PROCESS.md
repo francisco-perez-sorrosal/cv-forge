@@ -116,12 +116,12 @@ The `cv` data repository uses **Calendar Versioning** (CalVer: `YYYY.MM.DD`). Re
 
 4. **The reusable workflow (in `cv-forge`):**
    - Checks out both `cv` and `cv-forge` repos at the specified refs
-   - Runs `cv-forge render -f all` against `cv-data/`
+   - Runs `cv-forge render -f all --release-tag <ref>` against `cv-data/` — the tag is embedded in the HTML output's `<meta name="cv-release-tag" content="<ref>">` and footer line
    - Compiles the PDF with `latexmk`
    - Builds `release.json` with asset hashes and URLs
    - Uploads the eight assets to the GitHub Release
    - Deploys the HTML site to Wasmer static site app `fps-cv`
-   - Verifies the site is live by probing a known path
+   - Verifies the site is live by fetching `/` and asserting the `cv-release-tag` meta tag carries the pushed ref (REQ-06)
    - Fails unless all steps succeed
 
 ### Cross-Repo Contract
@@ -192,10 +192,12 @@ curl -s https://fps-cv-mcp.wasmer.app/healthz | jq .
 
 # Expected response:
 {
-  "origin": "release",
-  "release_tag": "v0.0.6",
+  "status": "ok",
+  "origin": {"kind": "release", "tag": "2026.09.14", "published_at": "2026-09-14T12:00:00Z"},
+  "release_tag": "2026.09.14",
   "loaded_at": "2026-09-14T12:34:56Z",
-  "refresh_state": "Fresh",
+  "refresh_state": "fresh",
+  "cv_forge_version": "0.0.5",
   "consecutive_failures": 0
 }
 ```

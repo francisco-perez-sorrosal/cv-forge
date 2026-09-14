@@ -66,7 +66,7 @@ Regenerate with `mmdc -i .ai-state/diagrams/deployment-topology/src/deployment-t
 
 ### Development
 
-No container topology. `CV_DATA_DIR=./cv-data TRANSPORT=streamable-http pixi run mcps` serves locally from a checkout; `CV_DATA_DIR` pins the data provider so no network fetch occurs. `cv-forge render -f <fmt>` writes to a gitignored output directory.
+No container topology. `CV_DATA_DIR=./cv-data cv-forge serve --transport http` serves locally from a checkout; `CV_DATA_DIR` pins the data provider so no network fetch occurs. `cv-forge render -f <fmt>` writes to a gitignored output directory.
 
 ## 4. Configuration
 
@@ -88,9 +88,8 @@ its default rather than an override.
 | `CV_BAKED_DIR` | `<repo_root>/baked`, falling back to `<repo_root>/cv-data` if that path is not a directory | `data/bootstrap.py::baked_snapshot_dir` — the directory `scripts/deploy.sh` stages the fallback snapshot into before an image build | `baked` |
 | `CV_RELEASE_REPO` | `francisco-perez-sorrosal/cv` | `data/bootstrap.py::build_provider_from_env` — repository whose latest release supplies the data | `francisco-perez-sorrosal/cv` |
 | `CV_REFRESH_INTERVAL` | `900` (seconds) | `data/bootstrap.py::build_provider_from_env` — refresh-loop period; raising it is the first lever if GitHub rate-limiting is ever observed | `900` |
-| `TRANSPORT` | `stdio` | `mcp/main.py::_transport_config` — `stdio` or `streamable-http`; `sse` is rejected. Not consulted by the Edge entrypoint (`main.py` calls `create_app()` directly, always stateless streamable HTTP). | n/a (Edge path bypasses this dispatch) |
-| `HOST` | `0.0.0.0` | `mcp/main.py::_transport_config`, `main.py`'s `__main__` guard — a real env var, not a code-pinned constant | unset (default already correct) |
-| `PORT` / `FASTMCP_PORT` | `10000` (`cv_forge.mcp.main.DEFAULT_PORT`), `PORT` checked first | `mcp/main.py::_transport_config`, `main.py`'s `__main__` guard, `cli/main.py::_cmd_serve` — `anybuild` injects `FASTMCP_PORT`, which the `mcp` SDK itself does not read; this project's own code resolves it explicitly | unset (Wasmer Edge assigns and injects the bind port itself) |
+| `HOST` | `0.0.0.0` | `cli/main.py::_cmd_serve`, `main.py`'s `__main__` guard — a real env var, not a code-pinned constant. There is no `--host` CLI flag. | unset (default already correct) |
+| `PORT` / `FASTMCP_PORT` | `10000` (`cv_forge.data.bootstrap.DEFAULT_PORT`), `PORT` checked first | `cli/main.py::_cmd_serve`, `main.py`'s `__main__` guard — `anybuild` injects `FASTMCP_PORT`, which the `mcp` SDK itself does not read; this project's own code resolves it explicitly | unset (Wasmer Edge assigns and injects the bind port itself) |
 | `CV_TRUST_HOST` | unset (DNS-rebinding protection **on**) | `mcp/app.py::_transport_security` — `"1"` disables the SDK's Host/Origin allowlist entirely. Required on Edge: Wasmer's proxy terminates the public hostname in front of this app, so the SDK's own localhost-only defaults would 421 every request. | `"1"` |
 | `CV_ALLOWED_ORIGINS` | unset | `mcp/app.py::_local_allowed_origins` — comma-separated list extending the local dev allowlist (e.g. a non-default dev frontend port). Irrelevant once `CV_TRUST_HOST=1` disables the check. | unset |
 
@@ -126,7 +125,7 @@ The two non-negotiable properties of this flow, both derived from documented `an
 1. **Never run `anybuild` from the repository root.** It ignores `.gitignore`, excluding only `.venv`, `.git` and `__pycache__`, so it will ship local scratch directories into the image — and a large image fails the registry upload with a bare HTTP 500. Stage `git ls-files` output into a temp directory first.
 2. **Assert `wasmer --version >= 7.0` before building.** On 6.1.0, `anybuild` 0.28.x shells out to a rejected `--volume` flag and its package upload fails with a bare HTTP 500. Also normalise `WASMER_BIN` to an absolute path: `anybuild` runs from the staging directory, so a relative binary path resolves there and fails with a bare "No such file or directory".
 
-**Status (M1.20): artifacts present, not yet deployed.** `main.py`, `Anybuild`, `app.yaml`, `deploy/site/app.yaml` and `scripts/deploy.sh` exist in the tree and are verified by static check (`bash -n`, a `--dry-run` staging run, and `import main` with `CV_DATA_DIR` unset) — no Wasmer app has been created yet (that is M3.1) and none of these have been exercised against the real platform. `deploy/site/app.yaml` in particular is a best-effort scaffold (no local Wasmer emulator exists to verify a static-site manifest against) and should be reconciled against whatever `wasmer app create fps-cv --template=static-website` actually produces at M3.1. This status line is superseded once M3 lands a real deploy.
+**Status (M1.32): artifacts present, not yet deployed.** `main.py`, `Anybuild`, `app.yaml`, `deploy/site/app.yaml`, `scripts/deploy.sh` and `.github/workflows/{deploy-mcp,publish,ci}.yml` all exist in the tree and are verified by static check (`bash -n`, a `--dry-run` staging run, `import main` with `CV_DATA_DIR` unset, `scripts/check_wasix_ceilings.py` clean) — no Wasmer app has been created yet (that is M3.1) and none of these have been exercised against the real platform. `deploy/site/app.yaml` in particular is a best-effort scaffold (no local Wasmer emulator exists to verify a static-site manifest against) and should be reconciled against whatever `wasmer app create fps-cv --template=static-website` actually produces at M3.1. This status line is superseded once M3 lands a real deploy.
 
 ### Rollback
 
@@ -134,7 +133,7 @@ The two non-negotiable properties of this flow, both derived from documented `an
 
 ### CI/CD Integration
 
-[cicd-engineer: `deploy-mcp.yml` in `cv-forge` (tag or dispatch → staged deploy → live poke) and the site-deploy step inside `publish.yml`.]
+`.github/workflows/deploy-mcp.yml` (`v*` tag push or `workflow_dispatch`) checks out the tag, validates WASIX ceilings, and runs the same staged `anybuild`/`wasmer deploy` path as `scripts/deploy.sh` against `fps-cv-mcp`. `.github/workflows/publish.yml` is the reusable `workflow_call` `cv` invokes on its own CalVer tag push; its site-deploy step targets `fps-cv` and gates on the `cv-release-tag` meta tag (REQ-06). `.github/workflows/ci.yml` runs the test suite plus `scripts/check_wasix_ceilings.py` on every push/PR. None of the three has executed against a real Wasmer app yet — M3 is the first live run.
 
 ## 6. Failure Analysis
 
