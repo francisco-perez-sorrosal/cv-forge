@@ -18,7 +18,9 @@ name: Deploy MCP Server
 on:
   push:
     tags:
-      - 'v*'
+      # Full SemVer tags only; the moving `v1` alias that release.sh re-points
+      # on the same push must not trigger a second, identical deploy.
+      - 'v[0-9]*.[0-9]*.[0-9]*'
   workflow_dispatch: {}
 
 permissions: {}
@@ -50,6 +52,16 @@ jobs:
         uses: wasmerio/setup-wasmer@24b15c95293d23f89c68bd40dac76338f773e924 # v3.1
         with:
           version: '7.4.1'
+
+      # Evidence for the ledger and a fast failure: where the action put the
+      # CLI and whether the step PATH sees it (deploy.sh also falls back to
+      # $WASMER_DIR/bin and ~/.wasmer/bin).
+      - name: Show wasmer CLI location
+        run: |
+          echo "WASMER_DIR=${WASMER_DIR:-<unset>}"
+          command -v wasmer || echo "wasmer not on PATH"
+          ls -l "${WASMER_DIR:-$HOME/.wasmer}/bin" 2>/dev/null || true
+          "${WASMER_DIR:-$HOME/.wasmer}/bin/wasmer" --version
 
       # Never pipe curl straight to sh: download the installer to a file so
       # its contents are inspectable/auditable in the run log before

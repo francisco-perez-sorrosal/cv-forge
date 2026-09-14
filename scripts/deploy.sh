@@ -55,8 +55,17 @@ fail() {
 
 # --- preflight ---------------------------------------------------------
 
+# Resolution order: explicit WASMER_BIN, PATH, the setup-wasmer action's
+# WASMER_DIR (its bin/ is not always on PATH inside a `pixi run` step), the
+# installer's default home.
 WASMER_BIN="${WASMER_BIN:-$(command -v wasmer || true)}"
-[ -n "$WASMER_BIN" ] || fail "wasmer CLI not found on PATH (need >= 7.0.0: curl https://get.wasmer.io -sSfL | sh)"
+if [ -z "$WASMER_BIN" ] && [ -n "${WASMER_DIR:-}" ] && [ -x "$WASMER_DIR/bin/wasmer" ]; then
+    WASMER_BIN="$WASMER_DIR/bin/wasmer"
+fi
+if [ -z "$WASMER_BIN" ] && [ -x "$HOME/.wasmer/bin/wasmer" ]; then
+    WASMER_BIN="$HOME/.wasmer/bin/wasmer"
+fi
+[ -n "$WASMER_BIN" ] || fail "wasmer CLI not found on PATH, \$WASMER_DIR/bin or ~/.wasmer/bin (need >= 7.0.0: curl https://get.wasmer.io -sSfL | sh)"
 WASMER_VERSION="$("$WASMER_BIN" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 WASMER_MAJOR="${WASMER_VERSION%%.*}"
 if [ -z "$WASMER_MAJOR" ] || [ "$WASMER_MAJOR" -lt 7 ] 2>/dev/null; then

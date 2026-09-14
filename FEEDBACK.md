@@ -34,6 +34,8 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-004 | WASIX index / anybuild | WASIX index / packaging | workaround | A greenfield `mcp` 2.2.0 server resolves `cryptography 50.0.1` + `cffi 2.1.1` (via `pyjwt[crypto]`); WASIX index tops out at `50.0.0` / `2.1.0`, and `cryptography` is imported at module load — three native ceilings (`pydantic-core`, `cryptography`, `cffi`) must now be hand-pinned |
 | F-005 | anybuild | anybuild / Python-MCP provider | paper-cut | The MCP provider appends `mcp[cli]` to the cross-install command unconditionally, re-adding the `[cli]` extra (typer, rich, …) a project deliberately dropped to keep the Edge image small |
 | F-006 | WASIX index + Wasmer Edge runtime | WASIX index / Edge runtime / packaging | blocker | `cffi 2.1.0+wasix.{1,2,3}` ships `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) but the Edge `python/python 3.13.17` runtime is a wasi-threads build that only loads `…-wasi-threads.so` — so `cryptography` (required by every `mcp` 2.x at import) dies on Edge with `ModuleNotFoundError: _cffi_backend`; the same image imports fine under `wasmer run` locally, which is a non-threads build |
+| F-007 | wasmer (CLI) / Wasmer Edge | Edge deploy / CLI | paper-cut | `wasmer deploy` health-checks `/` and reports a false "fails with a non-success status code of 404" for an app that serves `/healthz` and `/mcp`; the same sentence with `500` was the only signal for the real F-006 crash |
+| F-008 | setup-wasmer | CI action | paper-cut | `wasmerio/setup-wasmer` v3.1 targets Node.js 20 (GitHub force-runs it on Node 24 with a deprecation annotation) and the CLI it installs was not on PATH inside a `pixi run` step (`WASMER_DIR` is exported, `$WASMER_DIR/bin` is not reliably on PATH) |
 | F-005 | wasmerio/setup-wasmer | CI action | paper-cut | `action.yml`'s only documented input is `version` (default `''`); no README/marketplace text states the accepted format (plain SemVer? `v`-prefixed? range?) or what `''` resolves to -- confirmed empirically, not from docs |
 
 ---
@@ -212,6 +214,29 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> Edge app configuration (2026-09-14) — no health-check path setting found.
 - **Evidence:** deploy logs of both app versions (local-only; sentences quoted verbatim above).
 - **Related:** sdk-mcp F-041 — still reproduces on CLI 7.4.1.
+
+### F-008 — `setup-wasmer` v3.1: Node 20 deprecation annotation, and the installed CLI is not on PATH inside a `pixi run` step
+- **Target repo:** wasmerio/setup-wasmer
+- **Area:** CI action
+- **Severity:** paper-cut (first CI deploy of `cv-forge` failed at preflight; fixed on our side by resolving the CLI through `$WASMER_DIR/bin`)
+- **Environment:** GitHub Actions `ubuntu-latest`, `wasmerio/setup-wasmer@24b15c95…` (v3.1) with `version: '7.4.1'`, `prefix-dev/setup-pixi` + `pixi run -e dev ./scripts/deploy.sh`, 2026-09-14, run `34862858731` in `francisco-perez-sorrosal/cv-forge`.
+- **Steps to reproduce:**
+  1. A job with `setup-pixi` → `setup-wasmer` → a step running `pixi run -e dev <script that does command -v wasmer>`.
+- **Expected:** `wasmer` resolvable from any later step, including inside `pixi run`; an action that runs on the Node version the runner supports without a deprecation banner.
+- **Actual:**
+  ```
+  ! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: wasmerio/setup-wasmer@24b15c95…
+  …
+  env:
+    WASMER_DIR: /home/runner/.wasmer
+    WASMER_CACHE_DIR: /home/runner/.wasmer/cache
+  deploy.sh: preflight failed -- wasmer CLI not found on PATH (need >= 7.0.0: …)
+  ```
+  The action exports `WASMER_DIR` but the step's PATH (as seen from `pixi run`) did not contain `$WASMER_DIR/bin`. Our script now falls back to `$WASMER_DIR/bin/wasmer` and `~/.wasmer/bin/wasmer`; the follow-up run's "Show wasmer CLI location" step records the exact state.
+- **Proposed fix:** publish a Node-24 build of the action; append `$WASMER_DIR/bin` to `GITHUB_PATH` (or document that consumers must); document the `version:` input format (see sdk-mcp F-039).
+- **Docs consulted:** the action's README (no `version` format, no PATH note), 2026-09-14.
+- **Evidence:** run `34862858731`, job `deploy`, step "Deploy fps-cv-mcp" (log quoted above); `scripts/deploy.sh` resolution block.
+- **Related:** sdk-mcp F-039.
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer
