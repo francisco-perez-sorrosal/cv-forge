@@ -31,6 +31,7 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-001 | wasmer (CLI) | CLI / distribution | resolved-upstream | `wasmer self-update` 6.1.0 → 7.4.1 completed on 2026-09-13; it hung and failed on 2026-09-05 (sdk-mcp F-017) |
 | F-002 | wasmer (CLI) / installer | CLI / distribution | paper-cut | `wasmer self-update` post-install hint leaks a raw ANSI reset (`[0m`) when stdout is not a TTY |
 | F-003 | anybuild / docs | anybuild / docs | paper-cut | `anybuild --help` after install does not say the binary is not on PATH unless `~/.anybuild/env` is sourced; installer's `ANYBUILD_NO_PATH_UPDATE=1` is undocumented on docs.wasmer.io |
+| F-004 | WASIX index / anybuild | WASIX index / packaging | workaround | A greenfield `mcp` 2.2.0 server resolves `cryptography 50.0.1` + `cffi 2.1.1` (via `pyjwt[crypto]`); WASIX index tops out at `50.0.0` / `2.1.0`, and `cryptography` is imported at module load — three native ceilings (`pydantic-core`, `cryptography`, `cffi`) must now be hand-pinned |
 
 ---
 
@@ -114,3 +115,33 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> anybuild section (2026-09-13) — no mention of `ANYBUILD_NO_PATH_UPDATE`/`ANYBUILD_INSTALL_DIR`.
 - **Evidence:** installer script (243 lines) saved locally at pipeline scratch; the two variables are read at lines 86 and 171.
 - **Related:** sdk-mcp F-024 (anybuild `--help` lists no subcommands) — adjacent onboarding friction, same tool.
+
+### F-004 — Current `mcp` 2.2.0 pulls `cryptography`/`cffi` one patch above the WASIX index; three native ceilings must be hand-pinned
+- **Target repo:** WASIX package index (`python-registry.wasix.org`, owning repo to confirm) + wasmerio/anybuild (resolution strategy) + docs.wasmer.io (Python/MCP guide)
+- **Area:** WASIX index / packaging
+- **Severity:** workaround (would be a `blocker` at first cross-install; caught by a code review before the first `anybuild` run)
+- **Environment:** macOS arm64 (Darwin 25.3), Python 3.13, `pixi` 0.40.3 lock for `osx-arm64` + `linux-64`, `mcp` **2.2.0** (official Python SDK, released 2026), 2026-09-13. WASIX index queried the same day.
+- **Steps to reproduce:**
+  1. New project with `dependencies = ["mcp>=2.2,<3", "pydantic>=2.12,<2.13.5"]` (the `pydantic` ceiling is already the known one — sdk-mcp F-018).
+  2. Resolve normally (`pixi install` / `uv lock`).
+  3. Compare the lock against the index:
+     | Package | Host resolve (PyPI) | Max on `python-registry.wasix.org` | Why it is in the closure |
+     |---|---|---|---|
+     | `cryptography` | 50.0.1 | `50.0.0+wasix.2` (`cp313-abi3`, `cp314-abi3`) | `mcp` → `pyjwt[crypto]>=2.10.1`; imported at module top in `mcp/server/request_state.py:22-25` (`AESGCM`, `HKDF`, `SHA256`) — not an optional auth path |
+     | `cffi` | 2.1.1 | `2.1.0+wasix.3` (`cp313`, `cp314`) | via `cryptography` |
+     | `pydantic-core` | 2.46.5 (if `pydantic` unpinned) | `2.46.4+wasix.2` | via `pydantic` (known: sdk-mcp F-018) |
+  4. `anybuild` cross-installs with `uv pip install --platform wasix_wasm32 --only-binary=:all:` from the host-pinned `cross-requirements.txt`.
+- **Expected:** either the index tracks PyPI closely enough that the *current* official MCP SDK resolves cleanly on WASIX, or the tooling tells me up front which resolved versions have no WASIX wheel and which nearest version does — before a deploy attempt.
+- **Actual:** nothing in `anybuild`, `wasmer`, or the docs surfaces the gap. The failure would appear at cross-install time as a missing-wheel error for `cryptography==50.0.1` (or, if `anybuild`'s `--no-deps` compile drops the `crypto` extra — sdk-mcp F-025 — as an import-time death on Edge with a bare HTTP 500 and no traceback, the sdk-mcp F-026 signature). We now carry three hand-written ceilings with comments:
+  ```toml
+  # WASIX ceilings (verified 2026-09-13 against python-registry.wasix.org):
+  # pydantic-core 2.46.4, cryptography 50.0.0, cffi 2.1.0.
+  "pydantic>=2.12,<2.13.5",
+  "cryptography>=43,<50.0.1",
+  "cffi>=2.1,<2.1.1",
+  ```
+  and a CI script that re-queries the index so the pins fail loudly when they drift.
+- **Proposed fix:** (1) `anybuild` (or `wasmer`) gains a `check` mode that diffs a lockfile against the WASIX index and prints per-package "resolved X, WASIX max Y, nearest satisfiable Z" *before* building — the data is all public; (2) a published, machine-readable "WASIX index vs PyPI lag" page (or a `constraints.txt` per Python ABI that users can pass to their resolver) so pins do not have to be discovered one package at a time; (3) the docs' Python/MCP quick-start states plainly that the official `mcp` 2.x SDK needs these three ceilings today.
+- **Docs consulted:** <https://docs.wasmer.io/> Python on Edge / anybuild pages (2026-09-13) — no mention of index lag, ceilings, or a constraints file.
+- **Evidence:** `pyproject.toml` (pins with comments), `pixi.lock` lines ~445/471 (pre-fix resolve `cffi 2.1.1`, `cryptography 50.0.1`); review report `.ai-work/cv-repo-split/LIGHT_REVIEW_M1.3.md` § F1 (local-only; the table above inlines its content).
+- **Related:** sdk-mcp F-018 (same class, `pydantic-core`; still reproduces on 2026-09-13), F-025 (extras dropped), F-026 (native trap → bare 500).

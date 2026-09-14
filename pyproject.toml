@@ -22,10 +22,18 @@ dependencies = [
     "loguru>=0.7.3,<0.8",
     "pyyaml>=6.0,<7.0",
     "jinja2>=3.1,<4",
-    # WASIX pydantic-core ceiling is 2.46.4 (verified 2026-09-13); pydantic 2.13.5+
-    # requires a pydantic-core not yet published for WASIX. Do not relax past <2.13.5.
+    # WASIX ceilings, verified 2026-09-13 against python-registry.wasix.org
+    # (the Wasmer Edge deploy cross-installs wheels from that index only):
+    #   pydantic-core 2.46.4  -> pydantic 2.13.5+ needs a newer core; keep <2.13.5
+    #   cryptography  50.0.0  -> arrives via mcp -> pyjwt[crypto]; imported at
+    #                            module load by mcp.server.request_state
+    #   cffi          2.1.0   -> via cryptography
+    # scripts/check_wasix_ceilings.py (CI + deploy preflight) re-checks these.
+    # HTTP client: mcp 2.x brings httpx2 (pydantic's fork); the release fetcher
+    # uses it rather than adding a second HTTP stack to the Edge image.
     "pydantic>=2.12,<2.13.5",
-    "httpx>=0.28,<0.29",
+    "cryptography>=43,<50.0.1",
+    "cffi>=2.1,<2.1.1",
 ]
 
 [project.urls]
@@ -39,6 +47,10 @@ requires = ["hatchling"]
 [tool.pixi.project]
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.dependencies]
+# Wasmer Edge / WASIX wheels target cp313; keep every platform on the same ABI.
+python = "3.13.*"
 
 [tool.pixi.pypi-dependencies]
 cv_forge = { path = ".", editable = true }
