@@ -1,0 +1,119 @@
+name: Deploy MCP Server
+
+# Deploys cv-forge's own MCP server (fps-cv-mcp) to Wasmer Edge. Wraps
+# scripts/deploy.sh, which stages a git-tracked-only copy of the repo and
+# invokes anybuild + the wasmer CLI -- see that script's header comment for
+# why the staging step exists (anybuild ignores .gitignore).
+#
+# By the time this workflow can fire on a `v*` tag push, the fps-cv-mcp
+# Wasmer app and its first deploy already exist from a manual,
+# workstation-run `wasmer app create` + `scripts/deploy.sh` (orchestrator
+# Phase M3, before any `cv` release exists) -- this workflow only ever
+# performs redeploys. deploy.sh's own fallback already handles the
+# no-`cv`-release case (falls back to the local cv-data/ copy when
+# `cv-forge fetch-snapshot` has nothing to fetch), so no extra CI-side flag
+# is needed here; the "WASIX preflight" job summary step below documents
+# that behavior for anyone reading a run's summary.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: deploy-mcp
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          environments: dev
+          cache: true
+
+      - name: Install project (pixi)
+        run: pixi install -e dev
+
+      - name: Setup Wasmer CLI
+        uses: wasmerio/setup-wasmer@24b15c95293d23f89c68bd40dac76338f773e924 # v3.1
+        with:
+          version: '7.4.1'
+
+      # Never pipe curl straight to sh: download the installer to a file so
+      # its contents are inspectable/auditable in the run log before
+      # executing, then run it with ANYBUILD_NO_PATH_UPDATE=1 (a real,
+      # supported env var -- confirmed by reading the installer script
+      # directly) so it doesn't try to rewrite a shell rc file that doesn't
+      # exist on a runner; add its install dir to GITHUB_PATH ourselves
+      # instead.
+      - name: Install anybuild
+        run: |
+          set -euo pipefail
+          curl -fsSL https://anybuild.run/install -o /tmp/anybuild-install.sh
+          chmod +x /tmp/anybuild-install.sh
+          ANYBUILD_NO_PATH_UPDATE=1 /tmp/anybuild-install.sh
+          echo "$HOME/.anybuild/bin" >> "$GITHUB_PATH"
+
+      - name: WASIX dependency ceiling preflight
+        run: |
+          set -euo pipefail
+          pixi run -e dev python scripts/check_wasix_ceilings.py --json
+          {
+            echo "### WASIX ceiling preflight"
+            echo "Passed -- resolved dependency versions are within the WASIX index's built maxima."
+            echo
+            echo "Note: if no \`cv\` GitHub release exists yet, \`scripts/deploy.sh\`'s own"
+            echo "fallback stages this worktree's local \`cv-data/\` as the baked snapshot"
+            echo "instead of failing -- expect \`origin: baked\` on \`/healthz\` in that case."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy fps-cv-mcp
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WASMER_TOKEN:-}" ]; then
+            echo "::error::WASMER_TOKEN secret is not set"
+            exit 1
+          fi
+          pixi run -e dev ./scripts/deploy.sh fps-cv-mcp
+
+      - name: Live poke -- GET /healthz
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 5 https://fps-cv-mcp.wasmer.app/healthz | tee /tmp/healthz.json
+          echo
+
+      - name: Live poke -- POST /mcp tools/list
+        run: |
+          set -euo pipefail
+          status="$(curl -sS --retry 5 --retry-delay 5 \
+            -o /tmp/tools-list.json -w '%{http_code}' \
+            -X POST https://fps-cv-mcp.wasmer.app/mcp \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')"
+          cat /tmp/tools-list.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::POST /mcp tools/list returned HTTP $status, expected 200"
+            exit 1
+          fi
+          {
+            echo "### Deploy verified"
+            echo '```json'
+            cat /tmp/healthz.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -116,6 +116,7 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> anybuild section (2026-09-13) — no mention of `ANYBUILD_NO_PATH_UPDATE`/`ANYBUILD_INSTALL_DIR`.
 - **Evidence:** installer script (243 lines) saved locally at pipeline scratch; the two variables are read at lines 86 and 171.
 - **Related:** sdk-mcp F-024 (anybuild `--help` lists no subcommands) — adjacent onboarding friction, same tool.
+- **Reproduced in CI (2026-09-14):** same gap confirmed on a second platform while authoring `.github/workflows/deploy-mcp.yml` (M1.28b) — `ubuntu-latest` GitHub Actions runner, installer downloaded to a file (never piped to `sh`) and run with `ANYBUILD_NO_PATH_UPDATE=1`, then `~/.anybuild/bin` appended to `$GITHUB_PATH` in place of sourcing `$HOME/.anybuild/env`. `anybuild.run/`'s landing page still has no mention of the variable as of this date (`curl`-and-`grep` came back empty). No new entry needed — this strengthens F-003 with a second, independent environment rather than duplicating it.
 
 ### F-004 — Current `mcp` 2.2.0 pulls `cryptography`/`cffi` one patch above the WASIX index; three native ceilings must be hand-pinned
 - **Target repo:** WASIX package index (`python-registry.wasix.org`, owning repo to confirm) + wasmerio/anybuild (resolution strategy) + docs.wasmer.io (Python/MCP guide)
