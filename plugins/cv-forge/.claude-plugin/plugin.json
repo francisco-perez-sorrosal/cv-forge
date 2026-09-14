@@ -1,0 +1,28 @@
+{
+  "name": "cv-forge",
+  "description": "Maintainer tools for Francisco Perez-Sorrosal's CV — edit the data via PR, publish releases, deploy the MCP server",
+  "author": {
+    "name": "Francisco Perez-Sorrosal",
+    "email": "fperezsorrosal@gmail.com",
+    "url": "https://github.com/francisco-perez-sorrosal"
+  },
+  "homepage": "https://github.com/francisco-perez-sorrosal/cv-forge/tree/main/plugins/cv-forge",
+  "repository": "https://github.com/francisco-perez-sorrosal/cv-forge",
+  "license": "MIT",
+  "keywords": ["cv", "maintainer", "release", "wasmer"],
+  "skills": ["./skills/"],
+  "userConfig": {
+    "cv_repo_path": {
+      "type": "directory",
+      "title": "cv repo clone",
+      "description": "Local clone of github.com/francisco-perez-sorrosal/cv (must contain cv-data/resume.yaml). Used by cv-data-edit and cv-publish.",
+      "required": true
+    },
+    "cv_forge_path": {
+      "type": "directory",
+      "title": "cv-forge checkout",
+      "description": "Local checkout of github.com/francisco-perez-sorrosal/cv-forge. Optional: only needed when `cv-forge` is not on PATH (render preview in cv-data-edit) and for cv-forge-deploy.",
+      "required": false
+    }
+  }
+}
