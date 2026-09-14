@@ -1,6 +1,6 @@
 {
   "name": "cv-forge",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Maintainer tools for Francisco Perez-Sorrosal's CV — edit the data via PR, publish releases, deploy the MCP server",
   "author": {
     "name": "Francisco Perez-Sorrosal",
