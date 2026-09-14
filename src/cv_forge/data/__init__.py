@@ -1,6 +1,18 @@
 """CV data layer: parsed snapshots, release wire format, and query store."""
 
 from cv_forge.data.local import LocalDataDirError, load_local_dir
+from cv_forge.data.provider import (
+    CvDataProvider,
+    Failed,
+    Fresh,
+    Pinned,
+    RefreshOutcome,
+    RefreshState,
+    ReleaseFetcher,
+    Stale,
+    Unchanged,
+    Updated,
+)
 from cv_forge.data.release import (
     ArtifactUnavailable,
     AssetEntry,
@@ -22,13 +34,23 @@ __all__ = [
     "AssetEntry",
     "BakedSnapshot",
     "CachedArtifact",
+    "CvDataProvider",
     "CvDataSnapshot",
     "DataOrigin",
+    "Failed",
+    "Fresh",
     "LocalDataDirError",
     "LocalDir",
+    "Pinned",
+    "RefreshOutcome",
+    "RefreshState",
     "ReleaseAssets",
+    "ReleaseFetcher",
     "ReleaseManifest",
     "ResumeStore",
+    "Stale",
     "UnavailableReason",
+    "Unchanged",
+    "Updated",
     "load_local_dir",
 ]
