@@ -10,8 +10,15 @@ To preview the site locally before a real publish run, render it yourself:
 
 ```sh
 cv-forge render -f html --data-dir cv-data -o deploy/site/public
+mv deploy/site/public/FranciscoPerezSorrosal_CV.html deploy/site/public/index.html
 ```
 
 Then `wasmer deploy` from this directory deploys whatever `public/` holds
 at that moment -- the same thing the publish workflow's site-deploy step
 does in CI.
+
+Layout follows Wasmer's `static-website` template (scaffolded with
+`wasmer app create --template static-website` and reconciled here):
+`app.yaml` (the app), `Staticfile` (`root: public`), and
+`settings/config.toml` (the static-web-server config: directory listing
+off, compression on, `/health` enabled).
