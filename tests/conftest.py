@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,24 @@ from cv_forge.models.semantics import (
     TopicTaxonomy,
 )
 
-DATA_DIR = Path(__file__).parent.parent / "cv-data"
+
+def _resolve_data_dir() -> Path | None:
+    """Locate the real `cv` data checkout, if any.
+
+    `$CV_DATA_DIR` wins when set (matches the CLI/server resolution
+    convention). Otherwise fall back to a sibling `cv-data/` directory in
+    this checkout -- a transition-period convenience only, removed once the
+    data repo is fully split out. Returns `None` when neither is available,
+    so real-data tests can skip explicitly instead of erroring.
+    """
+    env = os.environ.get("CV_DATA_DIR")
+    if env:
+        return Path(env)
+    sibling = Path(__file__).parent.parent / "cv-data"
+    return sibling if sibling.is_dir() else None
+
+
+DATA_DIR = _resolve_data_dir()
 
 
 # --- Tier 1: Synthetic fixtures (no disk I/O) ---
@@ -307,4 +325,9 @@ def minimal_store(minimal_resume, minimal_semantics) -> ResumeStore:
 
 @pytest.fixture(scope="session")
 def real_store() -> ResumeStore:
+    if DATA_DIR is None:
+        pytest.skip(
+            "no real cv-data checkout found and $CV_DATA_DIR is unset -- "
+            "set CV_DATA_DIR to a cv-data directory to run real-data tests"
+        )
     return ResumeStore.load(DATA_DIR)
