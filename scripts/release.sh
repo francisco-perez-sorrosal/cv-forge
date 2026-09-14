@@ -1,151 +1,244 @@
 #!/bin/bash
+#
+# Release script for cv-forge.
+#
+# Bumps the single version source of truth (pyproject.toml's [project].version),
+# propagates it into both plugin manifests, tags a SemVer release, and re-points
+# the moving `vMAJOR` alias that cv-forge's own GitHub Actions and the cv-data
+# repo's publish workflow pin against.
+#
+# Usage: scripts/release.sh <major|minor|patch|X.Y.Z> [--dry-run] [--no-push] [--allow-branch]
+#
+# Examples:
+#   scripts/release.sh patch                 # 0.0.5 -> 0.0.6, commit+tag+push
+#   scripts/release.sh minor --dry-run       # show what would change, do nothing
+#   scripts/release.sh 1.0.0 --no-push       # commit+tag locally, push manually later
 
-# Release script for CV MCP Server MCPB bundles
-# Usage: ./scripts/release.sh [version]
-# Example: ./scripts/release.sh 0.0.1
+set -euo pipefail
 
-set -e
+MAIN_BRANCH="main"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Helper functions
-info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
+
+usage() {
+    cat <<EOF
+Usage: $0 <major|minor|patch|X.Y.Z> [--dry-run] [--no-push] [--allow-branch]
+
+  major|minor|patch  Bump the corresponding part of pyproject.toml's version.
+  X.Y.Z               Set the version explicitly.
+
+  --dry-run       Print every change and command without writing anything.
+  --no-push       Commit and tag locally; skip the push step.
+  --allow-branch  Proceed even when not on '$MAIN_BRANCH' (real runs only;
+                  --dry-run never needs this).
+EOF
 }
 
-success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
+# ---- Argument parsing ------------------------------------------------------
 
-warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+SPEC=""
+DRY_RUN=0
+NO_PUSH=0
+ALLOW_BRANCH=0
 
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-    exit 1
-}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --dry-run) DRY_RUN=1 ;;
+        --no-push) NO_PUSH=1 ;;
+        --allow-branch) ALLOW_BRANCH=1 ;;
+        -*) error "Unknown flag: $1" ;;
+        *)
+            [ -n "$SPEC" ] && error "Unexpected extra argument: $1"
+            SPEC="$1"
+            ;;
+    esac
+    shift
+done
 
-# Check if version is provided
-if [ -z "$1" ]; then
-    error "Version is required. Usage: $0 <version>"
-fi
+[ -n "$SPEC" ] || { usage; error "Version spec is required."; }
 
-VERSION="$1"
-TAG="v$VERSION"
+# ---- Preflight --------------------------------------------------------------
 
-info "Preparing release for version: $VERSION"
+for cmd in python3 jq git gh pixi; do
+    command -v "$cmd" >/dev/null 2>&1 || error "Required tool '$cmd' not found on PATH."
+done
 
-# Validate version format (basic semver check)
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
-    error "Invalid version format. Use semantic versioning (e.g., 0.0.1, 0.1.0, 1.0.0-beta)"
-fi
+gh auth status >/dev/null 2>&1 || error "gh is not authenticated. Run 'gh auth login' first."
 
-# Check if we're on the mcp branch
 CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "mcp" ]; then
-    warning "Not on mcp branch (current: $CURRENT_BRANCH). Switching to mcp branch..."
-    git checkout mcp || error "Failed to switch to mcp branch"
+if [ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+        warning "Not on '$MAIN_BRANCH' (current: $CURRENT_BRANCH) — continuing, this is a dry run."
+    elif [ "$ALLOW_BRANCH" -eq 1 ]; then
+        warning "Not on '$MAIN_BRANCH' (current: $CURRENT_BRANCH) — proceeding per --allow-branch."
+    else
+        error "Not on '$MAIN_BRANCH' (current: $CURRENT_BRANCH). Re-run with --allow-branch if intentional."
+    fi
 fi
 
-# Check if working directory is clean
-if ! git diff-index --quiet HEAD --; then
-    error "Working directory is not clean. Please commit or stash changes before releasing."
+if [ "$DRY_RUN" -eq 0 ]; then
+    git diff-index --quiet HEAD -- || error "Working directory is not clean. Commit or stash changes first."
 fi
 
-# Update manifest.json version
-info "Updating manifest.json version to $VERSION..."
-python3 -c "
-import json
-with open('manifest.json', 'r') as f:
-    manifest = json.load(f)
-manifest['version'] = '$VERSION'
-with open('manifest.json', 'w') as f:
-    json.dump(manifest, f, indent=2)
-print('Updated manifest.json version')
-"
+# ---- Version computation ----------------------------------------------------
 
-# Update pyproject.toml version
-info "Updating pyproject.toml version to $VERSION..."
-python3 -c "
-import re
-with open('pyproject.toml', 'r') as f:
+CURRENT_VERSION=$(python3 - <<'PY'
+import re, sys
+with open("pyproject.toml") as f:
     content = f.read()
-content = re.sub(r'^version = \".*\"', f'version = \"$VERSION\"', content, flags=re.MULTILINE)
-with open('pyproject.toml', 'w') as f:
-    f.write(content)
-print('Updated pyproject.toml version')
-"
+m = re.search(r'(?m)^version = "([^"]+)"$', content)
+if not m:
+    sys.exit("error: no top-level version = \"...\" line found in pyproject.toml")
+print(m.group(1))
+PY
+) || error "Could not read current version from pyproject.toml."
 
-# Build MCPB package to calculate SHA256
-info "Building MCPB package for version $VERSION..."
-if ! make; then
-    error "Failed to build MCPB package. Please check the build process."
+NEW_VERSION=$(python3 - "$CURRENT_VERSION" "$SPEC" <<'PY'
+import re, sys
+current, spec = sys.argv[1], sys.argv[2]
+m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current)
+if not m:
+    sys.exit(f"error: current version '{current}' is not X.Y.Z")
+major, minor, patch = (int(x) for x in m.groups())
+if re.fullmatch(r"\d+\.\d+\.\d+", spec):
+    new = spec
+elif spec == "major":
+    new = f"{major + 1}.0.0"
+elif spec == "minor":
+    new = f"{major}.{minor + 1}.0"
+elif spec == "patch":
+    new = f"{major}.{minor}.{patch + 1}"
+else:
+    sys.exit(f"error: invalid spec '{spec}' (expected major|minor|patch|X.Y.Z)")
+print(new)
+PY
+) || error "Could not compute new version."
+
+TAG="v$NEW_VERSION"
+MAJOR_ALIAS="v${NEW_VERSION%%.*}"
+
+if git tag -l | grep -qx "$TAG"; then
+    error "Tag $TAG already exists. Choose a different version."
 fi
 
-# Calculate SHA256 of the built package
-MCPB_FILE="./dist/mcpb/fps-cv-mcp-${VERSION}.mcpb"
-if [ ! -f "$MCPB_FILE" ]; then
-    error "MCPB file not found at $MCPB_FILE after build. Build may have failed."
+info "Version: $CURRENT_VERSION -> $NEW_VERSION (tag $TAG, alias $MAJOR_ALIAS)"
+
+PLUGIN_MANIFESTS=(
+    "plugins/cv/.claude-plugin/plugin.json"
+    "plugins/cv-forge/.claude-plugin/plugin.json"
+)
+
+# ---- Dry run: report and stop -----------------------------------------------
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    info "[DRY RUN] Would write version=\"$NEW_VERSION\" to: pyproject.toml"
+    for manifest in "${PLUGIN_MANIFESTS[@]}"; do
+        info "[DRY RUN] Would set \"version\": \"$NEW_VERSION\" in: $manifest"
+    done
+    info "[DRY RUN] Would run: pixi install (refreshes pixi.lock's own cv-forge version entry)"
+    info "[DRY RUN] Would run: git add pyproject.toml pixi.lock ${PLUGIN_MANIFESTS[*]}"
+    info "[DRY RUN] Would run: git commit -m \"chore(release): $TAG\""
+    info "[DRY RUN] Would run: git tag $TAG"
+    info "[DRY RUN] Would run: git tag -f $MAJOR_ALIAS $TAG"
+    if [ "$NO_PUSH" -eq 0 ]; then
+        info "[DRY RUN] Would run: git push origin $CURRENT_BRANCH $TAG && git push -f origin $MAJOR_ALIAS"
+    else
+        info "[DRY RUN] --no-push given: would skip the push step."
+    fi
+    info "[DRY RUN] $TAG would trigger .github/workflows/deploy-mcp.yml (v* tag) to redeploy the MCP server."
+    info "[DRY RUN] No follow-up needed in bit-agora: marketplace entries carry no version field."
+    exit 0
 fi
 
-info "Calculating SHA256 for $MCPB_FILE..."
-SHA256=$(openssl dgst -sha256 "$MCPB_FILE" | cut -d' ' -f2)
-info "SHA256: $SHA256"
+# ---- Write version into pyproject.toml --------------------------------------
 
-# Generate server.json from template with actual SHA256
-info "Generating server.json from template with SHA256..."
-python3 -c "
-import re
-with open('server.json.template', 'r') as f:
-    template = f.read()
+info "Updating pyproject.toml..."
+python3 - "$NEW_VERSION" <<'PY'
+import re, sys
+new_version = sys.argv[1]
+path = "pyproject.toml"
+with open(path) as f:
+    content = f.read()
+new_content, count = re.subn(
+    r'(?m)^version = "[^"]+"$', f'version = "{new_version}"', content, count=1
+)
+if count != 1:
+    sys.exit(f"error: expected exactly one top-level version line in {path}, found {count}")
+with open(path, "w") as f:
+    f.write(new_content)
+PY
 
-# Replace version placeholders
-content = template.replace('{{VERSION}}', '$VERSION')
+# ---- Write version into both plugin manifests, right after "name" ----------
 
-# Replace SHA256 placeholder with actual hash
-content = content.replace('{{FILE_SHA256}}', '$SHA256')
+for manifest in "${PLUGIN_MANIFESTS[@]}"; do
+    info "Updating $manifest..."
+    # A text-line edit, not a json.load/json.dump round-trip: dumping with
+    # indent=2 also expands short inline arrays (keywords, skills) onto
+    # multiple lines, which would blow the diff far past "just the version"
+    # (found manually while verifying this script — see LEARNINGS.md). Editing
+    # the one "version"/"name" line in place preserves every other line byte
+    # for byte and keeps the diff minimal, per this step's own done-when.
+    python3 - "$manifest" "$NEW_VERSION" <<'PY'
+import re, sys
 
-with open('server.json', 'w') as f:
-    f.write(content)
-print('Generated server.json from template with SHA256: $SHA256')
-"
+path, new_version = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    lines = f.readlines()
 
-# Check if tag already exists
-if git tag -l | grep -q "^$TAG$"; then
-    error "Tag $TAG already exists. Please use a different version."
+name_idx = version_idx = None
+for i, line in enumerate(lines):
+    if version_idx is None and re.match(r'^\s*"version"\s*:', line):
+        version_idx = i
+    if name_idx is None and re.match(r'^\s*"name"\s*:', line):
+        name_idx = i
+
+new_line = f'  "version": "{new_version}",\n'
+if version_idx is not None:
+    lines[version_idx] = new_line
+elif name_idx is not None:
+    lines.insert(name_idx + 1, new_line)
+else:
+    sys.exit(f'error: {path} has no top-level "name" key to anchor "version" after')
+
+with open(path, "w") as f:
+    f.writelines(lines)
+PY
+    jq empty "$manifest" || error "$manifest is not valid JSON after the version update."
+done
+
+# ---- Refresh pixi.lock (it carries cv-forge's own resolved version) --------
+
+info "Running pixi install to refresh pixi.lock..."
+pixi install >/dev/null || error "pixi install failed while refreshing pixi.lock."
+
+# ---- Commit, tag, push -------------------------------------------------------
+
+info "Committing version bump..."
+git add pyproject.toml pixi.lock "${PLUGIN_MANIFESTS[@]}"
+git commit -m "chore(release): $TAG"
+
+info "Tagging $TAG and re-pointing $MAJOR_ALIAS..."
+git tag "$TAG"
+git tag -f "$MAJOR_ALIAS" "$TAG"
+
+if [ "$NO_PUSH" -eq 1 ]; then
+    warning "--no-push given: commit and tags created locally, nothing pushed."
+else
+    info "Pushing commit and tags..."
+    git push origin "$CURRENT_BRANCH" "$TAG"
+    git push -f origin "$MAJOR_ALIAS"
 fi
 
-# Commit version updates
-info "Committing version updates..."
-git add manifest.json pyproject.toml server.json pixi.lock uv.lock
-git commit -m "chore: bump version to $VERSION
-
-- Update manifest.json version to $VERSION
-- Update pyproject.toml version to $VERSION
-- Update server.json version to $VERSION
-- Update pixi.lock to $VERSION
-- Update uv.lock to $VERSION
-- Prepare for release $TAG"
-
-# Create and push tag
-info "Creating and pushing tag $TAG..."
-git tag -a "$TAG" -m "Release version $VERSION
-
-This release includes:
-- CV MCP Server MCPB bundle
-- Python 3.13 compatibility
-- All CV tools and summarization capabilities"
-
-git push origin mcp
-git push origin "$TAG"
-
-success "Release $VERSION created successfully!"
-info "GitHub Actions will now build and publish the MCPB bundle."
-info "Check the workflow at: https://github.com/francisco-perez-sorrosal/cv/actions"
-info "Release will be available at: https://github.com/francisco-perez-sorrosal/cv/releases/tag/$TAG"
+success "Release $TAG prepared."
+info "This tag triggers .github/workflows/deploy-mcp.yml, which redeploys the MCP server to Wasmer Edge."
+info "No follow-up needed in bit-agora: the plugins/cv and plugins/cv-forge marketplace entries carry no version field."
