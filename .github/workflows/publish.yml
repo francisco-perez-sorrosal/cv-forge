@@ -91,8 +91,12 @@ jobs:
           # older moderncv used fontawesome5 -- keep both so either resolves);
           # enumitem/multibib/amsfonts are the templates' own imports (lmodern
           # is the `lm` package, already in collection-fontsrecommended).
+          # collection-pictures (pgf/tikz) and collection-latexrecommended
+          # (microtype, fancyhdr, …) cover moderncv's transitive dependencies,
+          # which grew between TeX Live 2024 and 2026.
           tlmgr install moderncv geometry babel babel-english xcolor \
-            fontawesome6 fontawesome5 multirow arydshln collection-fontsrecommended \
+            fontawesome6 fontawesome5 academicons marvosym multirow arydshln \
+            collection-fontsrecommended collection-pictures collection-latexrecommended \
             enumitem multibib amsfonts hyperref etoolbox \
             biblatex biber latexmk collection-latex
 
