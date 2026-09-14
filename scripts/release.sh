@@ -186,8 +186,8 @@ for manifest in "${PLUGIN_MANIFESTS[@]}"; do
     # indent=2 also expands short inline arrays (keywords, skills) onto
     # multiple lines, which would blow the diff far past "just the version"
     # (found manually while verifying this script — see LEARNINGS.md). Editing
-    # the one "version"/"name" line in place preserves every other line byte
-    # for byte and keeps the diff minimal, per this step's own done-when.
+    # the one "version"/"name" line in place preserves every other line
+    # byte-for-byte and keeps the diff minimal, per this step's own done-when.
     python3 - "$manifest" "$NEW_VERSION" <<'PY'
 import re, sys
 
