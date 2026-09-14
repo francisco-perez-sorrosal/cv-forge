@@ -237,7 +237,10 @@ class CvDataProvider:
         try:
             manifest = await self._fetcher.fetch_manifest()
             if isinstance(manifest, ArtifactUnavailable):
-                return self._fail(f"release.json: {manifest.reason}")
+                return self._fail(
+                    f"release.json: {manifest.reason}"
+                    + (f" ({manifest.detail})" if manifest.detail else "")
+                )
 
             already_released = isinstance(self._snapshot.origin, ReleaseAssets)
             if already_released and manifest.tag == self.current_tag:
@@ -387,6 +390,10 @@ class CvDataProvider:
         previous_failures = (
             self._state.consecutive_failures if isinstance(self._state, Stale) else 0
         )
+        if previous_failures == 0:
+            # The boot state is already Stale, so the kind-change log below
+            # stays silent for the first failure; say it once here.
+            logger.warning(f"CvDataProvider refresh failed: {reason}")
         self._transition(
             Stale(
                 last_success_at=previous_success,

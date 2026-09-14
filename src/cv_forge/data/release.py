@@ -100,6 +100,9 @@ class ArtifactUnavailable(BaseModel):
     download_url: str
     reason: UnavailableReason
     http_status: int | None = None
+    # Free-text diagnostic (exception text or "HTTP <status> from <final url>");
+    # surfaces in /healthz and logs, never in the closed `reason` set.
+    detail: str | None = None
 
 
 def format_unavailable(
@@ -184,19 +187,23 @@ class GitHubReleaseFetcher:
                 timeout=self._timeout, follow_redirects=True
             ) as client:
                 response = await client.get(url)
-        except httpx2.TimeoutException:
+        except httpx2.TimeoutException as exc:
             return ArtifactUnavailable(
                 name=name,
                 tag=self._tag,
                 download_url=url,
                 reason=UnavailableReason.TIMEOUT,
+                detail=f"{type(exc).__name__}: {exc}",
             )
-        except httpx2.HTTPError:
+        except httpx2.HTTPError as exc:
+            # Transport-level failures (TLS, DNS, redirect handling) carry no
+            # status; the exception text is the only diagnostic available.
             return ArtifactUnavailable(
                 name=name,
                 tag=self._tag,
                 download_url=url,
                 reason=UnavailableReason.HTTP_ERROR,
+                detail=f"{type(exc).__name__}: {exc}",
             )
 
         if response.status_code == 404:
@@ -206,6 +213,7 @@ class GitHubReleaseFetcher:
                 download_url=url,
                 reason=UnavailableReason.NO_RELEASE,
                 http_status=response.status_code,
+                detail=f"HTTP {response.status_code} from {response.url}",
             )
         if response.status_code >= 400:
             return ArtifactUnavailable(
@@ -214,5 +222,6 @@ class GitHubReleaseFetcher:
                 download_url=url,
                 reason=UnavailableReason.HTTP_ERROR,
                 http_status=response.status_code,
+                detail=f"HTTP {response.status_code} from {response.url}",
             )
         return response.content
