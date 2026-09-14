@@ -461,8 +461,8 @@ packages:
   requires_python: '>=3.9,!=3.9.0,!=3.9.1'
 - pypi: .
   name: cv-forge
-  version: 1.0.3
-  sha256: a7f4596d6a7584c3b187845062e984cd32476f0204d98767b2f426f07d1ee409
+  version: 1.0.4
+  sha256: 5f7e39eb447116d1e19c45ea98b835edd95ac206814a0807cad0dc9cfa783a56
   requires_dist:
   - mcp>=2.2,<3
   - loguru>=0.7.3,<0.8
