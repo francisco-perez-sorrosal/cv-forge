@@ -56,7 +56,19 @@ The server is remote, so there is nothing to download or run locally. Add it as 
 3. Name it (for example `Francisco's CV`) and enter the URL `https://fps-cv-mcp.wasmer.app/mcp`; no authentication is required
 4. Save, then enable the connector from the tools menu of a conversation
 
-The server always serves the latest published release of the `cv` repository; you never need to update the connector after a new CV release. The two skills (`cv-analyst`, `cv-tailoring`) are Claude Code plugin content; in Claude Desktop, the `summarize_cv` tool provides the summarization capability instead, and the raw tools (`get_cv`, `get_cv_sections`, `query_work`, …) are available directly.
+The server always serves the latest published release of the `cv` repository; you never need to update the connector after a new CV release. The raw tools (`get_cv`, `get_cv_sections`, `query_work`, …) and `summarize_cv` are available as soon as the connector is enabled.
+
+#### Skills in Claude Desktop and claude.ai
+
+The `cv-analyst` and `cv-tailoring` skills ship inside the Claude Code plugin; Claude Desktop and claude.ai take them as uploaded zips instead. Build them from this repository:
+
+```bash
+make build-skill
+```
+
+This writes `dist/skill/cv-analyst.zip` and `dist/skill/cv-tailoring.zip` (each contains `SKILL.md` and its `references/`; the frontmatter is limited to the portable `name` and `description` fields the upload accepts). Then, in Claude Desktop or claude.ai: Settings → **Features** (or Capabilities) → **Skills** → **Add skill** → upload one zip at a time. Rebuild and re-upload after a plugin release that changes a skill.
+
+Without the skills, summarization still works through the `summarize_cv` tool; tailoring (job-targeted CV with compiled PDF) needs `cv-tailoring` plus a local LaTeX or Typst toolchain, so it is best used from Claude Code.
 
 ## Usage
 
