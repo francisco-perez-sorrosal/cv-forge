@@ -154,7 +154,13 @@ fi
 # Edge. `main.py` puts vendor/wasix first on sys.path. See FEEDBACK.md:
 # cffi wheel built for the wrong WASIX ABI. Remove once the index ships a
 # threads-suffixed wheel.
-CFFI_VERSION="$(grep -A1 '^  name: cffi$' pixi.lock | grep 'version:' | head -1 | awk '{print $2}')"
+# Exact WASIX builds (with their +wasix.N local label) known to load on the
+# Edge interpreter. The index has republished the same public version with a
+# different extension suffix before (pydantic-core +wasix.2 was wasi-threads,
+# +wasix.3 is plain wasi), and anybuild always resolves the newest label, so
+# the only stable way to get a loadable build is to vendor a pinned one and
+# let main.py put vendor/wasix ahead of site-packages. See FEEDBACK.md.
+WASIX_VENDOR_PINS="cffi==2.1.0+wasix.3 pydantic-core==2.46.4+wasix.2"
 VENDOR_DIR="$STAGE/vendor/wasix"
 mkdir -p "$VENDOR_DIR"
 if command -v uvx >/dev/null 2>&1; then
@@ -162,14 +168,20 @@ if command -v uvx >/dev/null 2>&1; then
 else
     UVX="pixi run -e dev uvx"
 fi
-$UVX pip install "cffi==${CFFI_VERSION}" --target "$VENDOR_DIR" \
-    --platform wasix_wasm32 --only-binary=:all: --python-version=3.13 \
-    --extra-index-url https://python-registry.wasix.org/simple --no-deps -q \
-    || fail "could not cross-install cffi==${CFFI_VERSION} for the vendor shim"
-CFFI_SO="$(find "$VENDOR_DIR" -maxdepth 1 -name '_cffi_backend.cpython-313-wasm32-wasi.so' | head -1)"
-[ -n "$CFFI_SO" ] || fail "cffi wheel did not contain _cffi_backend.cpython-313-wasm32-wasi.so"
-cp "$CFFI_SO" "$VENDOR_DIR/_cffi_backend.cpython-313-wasm32-wasi-threads.so"
-echo "deploy.sh: vendored cffi ${CFFI_VERSION} backend with a wasi-threads suffix into vendor/wasix/"
+for pin in $WASIX_VENDOR_PINS; do
+    $UVX pip install "$pin" --target "$VENDOR_DIR" \
+        --platform wasix_wasm32 --only-binary=:all: --python-version=3.13 \
+        --extra-index-url https://python-registry.wasix.org/simple --no-deps -q \
+        || fail "could not cross-install $pin for the vendor shim"
+done
+# Every extension built for the non-threads ABI also gets a wasi-threads name;
+# the threads interpreter probes only that suffix (the binaries load either way).
+find "$VENDOR_DIR" -name '*.cpython-313-wasm32-wasi.so' | while read -r so; do
+    cp "$so" "${so%.cpython-313-wasm32-wasi.so}.cpython-313-wasm32-wasi-threads.so"
+done
+THREADS_COUNT="$(find "$VENDOR_DIR" -name '*wasi-threads.so' | wc -l | tr -d ' ')"
+[ "$THREADS_COUNT" -ge 2 ] || fail "vendor shim incomplete: expected wasi-threads extensions for cffi and pydantic-core, found $THREADS_COUNT"
+echo "deploy.sh: vendored WASIX pins ($WASIX_VENDOR_PINS) with wasi-threads extension names into vendor/wasix/"
 
 STAGED_COUNT="$(find "$STAGE" -type f | wc -l | tr -d ' ')"
 echo "deploy.sh: staged $STAGED_COUNT files (git-tracked + baked/ + vendor/) in $STAGE"

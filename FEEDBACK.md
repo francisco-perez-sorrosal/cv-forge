@@ -35,6 +35,7 @@ Friction observed while building and operating `cv-forge` on Wasmer software —
 | F-005 | anybuild | anybuild / Python-MCP provider | paper-cut | The MCP provider appends `mcp[cli]` to the cross-install command unconditionally, re-adding the `[cli]` extra (typer, rich, …) a project deliberately dropped to keep the Edge image small |
 | F-006 | WASIX index + Wasmer Edge runtime | WASIX index / Edge runtime / packaging | blocker | `cffi 2.1.0+wasix.{1,2,3}` ships `_cffi_backend.cpython-313-wasm32-wasi.so` (non-threads suffix) but the Edge `python/python 3.13.17` runtime is a wasi-threads build that only loads `…-wasi-threads.so` — so `cryptography` (required by every `mcp` 2.x at import) dies on Edge with `ModuleNotFoundError: _cffi_backend`; the same image imports fine under `wasmer run` locally, which is a non-threads build |
 | F-007 | wasmer (CLI) / Wasmer Edge | Edge deploy / CLI | paper-cut | `wasmer deploy` health-checks `/` and reports a false "fails with a non-success status code of 404" for an app that serves `/healthz` and `/mcp`; the same sentence with `500` was the only signal for the real F-006 crash |
+| F-011 | WASIX index + anybuild | WASIX index / packaging | blocker | `pydantic_core 2.46.4+wasix.3` (published between 2026-09-14 and 09-15) ships `_pydantic_core.cpython-313-wasm32-wasi.so` where `+wasix.2` shipped `…-wasi-threads.so`; anybuild always takes the newest local label, so an unchanged project redeployed a day later crashed at import with `No module named 'pydantic_core._pydantic_core'` — a rebuild under the same public version silently changed ABI |
 | F-010 | Wasmer Edge runtime (WASIX Python image) / docs | Edge runtime / networking | blocker | The WASIX Python image has no CA certificate store: every outbound HTTPS request with default verification fails with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`; nothing in the docs or the build output says so — ship `certifi` and pass an explicit SSL context |
 | F-009 | wasmer (CLI) / static-website template / docs | static site / Edge deploy | workaround | `wasmer app create --template static-website` scaffolds `app.yaml` + `Staticfile` + `settings/config.toml` + `public/` and its README says "run `wasmer deploy`", but `wasmer deploy --non-interactive` refuses: "The app.yaml references a local package, but no wasmer.toml manifest was found … use --build-remote"; a hand-written `wasmer.toml` for `wasmer/static-web-server` fixes it |
 | F-008 | setup-wasmer | CI action | paper-cut | `wasmerio/setup-wasmer` v3.1 targets Node.js 20 (GitHub force-runs it on Node 24 with a deprecation annotation) and the CLI it installs was not on PATH inside a `pixi run` step (`WASMER_DIR` is exported, `$WASMER_DIR/bin` is not reliably on PATH) |
@@ -297,6 +298,31 @@ From `wasmer-sdk-mcp`'s ledger (2026-09-04/05, anybuild 0.28.3, CLI 6.1.0 → 7.
 - **Docs consulted:** <https://docs.wasmer.io/> Edge Python / networking pages (2026-09-14) — no mention of certificates.
 - **Evidence:** `/healthz` body of app version `v1.0.6` (quoted above); `src/cv_forge/data/release.py` `_ca_context()` (the fix: `certifi` dependency + `ssl.create_default_context(cafile=certifi.where())` passed as `verify=`).
 - **Related:** sdk-mcp F-013 (private-CA TLS documented only deep) — adjacent; this one is about the *public* roots being absent.
+
+### F-011 — A WASIX index rebuild (`+wasix.3`) changed `pydantic-core`'s extension ABI under the same public version; an unchanged project stopped starting on Edge a day later
+- **Target repo:** WASIX package index (`python-registry.wasix.org`, owning repo to confirm) + wasmerio/anybuild (resolution policy)
+- **Area:** WASIX index / packaging
+- **Severity:** blocker (production 500 on the next routine deploy, no code change involved)
+- **Environment:** anybuild 0.28.4, `wasmer` 7.4.1, project pins `pydantic>=2.12,<2.13.5` (resolves `pydantic-core 2.46.4`), Edge runtime `python/python 3.13.17` (threads build). Deploy of `cv-forge` v1.0.7 on 2026-09-14 ~16:10 UTC: healthy. Deploy of v1.0.8 on 2026-09-15 ~03:15 UTC (only docs/comments and a redundant `httpx2` declaration changed): every request 500.
+- **Steps to reproduce:**
+  1. `wasmer app logs fps-cv-mcp` after the v1.0.8 deploy:
+     ```
+     File "/opt/venv/lib/python3.13/site-packages/pydantic/warnings.py", line 5, in <module>
+     ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'
+     ```
+  2. The CI cross-install log shows what changed: `Downloading pydantic_core-2.46.4%2Bwasix.3-cp313-cp313-wasix_wasm32.whl` (the v1.0.7 build had installed `+wasix.2`).
+  3. Compare the two wheels' contents (`unzip -l`):
+     ```
+     +wasix.2: pydantic_core/_pydantic_core.cpython-313-wasm32-wasi-threads.so
+     +wasix.3: pydantic_core/_pydantic_core.cpython-313-wasm32-wasi.so
+     ```
+     The Edge interpreter's `EXTENSION_SUFFIXES` include only the `-wasi-threads` form, so the `+wasix.3` module is invisible — the mirror image of F-006 (`cffi`), now hitting a package that used to work.
+- **Expected:** a rebuild published under the same public version keeps the ABI; if the index is migrating from wasi-threads to plain wasi builds (F-006 suggests `cffi` was already there), the Edge runtime moves in lock-step or the index keeps both suffixes in one wheel; and `anybuild` lets a project pin `+wasix.N` labels (its `uv pip compile --no-deps` of `pyproject.toml` cannot express them because the host resolver never sees the WASIX index).
+- **Actual:** the newest label wins silently; nothing in the build output flags that an extension's suffix does not match the target interpreter; the failure surfaces as a bare Edge 500 after a green deploy.
+- **Proposed fix:** (1) never change the extension suffix within a public version — bump the public version or keep both suffixes; (2) publish an index changelog / `wasix-abi` tag per wheel; (3) `anybuild` cross-check of every `.so` suffix in the built venv against the target interpreter (the same one-line check proposed in F-006) and a documented way to pin `+wasix.N` labels (a constraints file input).
+- **Docs consulted:** <https://docs.wasmer.io/> anybuild / Python pages (2026-09-15) — nothing on index versioning or ABI.
+- **Evidence:** `cv-forge` deploy runs `34866868562` (v1.0.7, healthy) and `34924216177` (v1.0.8, live poke failed); `wasmer app logs fps-cv-mcp`; the two wheel listings above. Workaround in this repo: `scripts/deploy.sh` vendors pinned `+wasix.N` builds (`cffi==2.1.0+wasix.3`, `pydantic-core==2.46.4+wasix.2`) into `vendor/wasix/` with wasi-threads names, ahead of site-packages.
+- **Related:** F-006 (same mechanism, `cffi`), sdk-mcp F-018 (index lag).
 
 ### F-005 — `setup-wasmer` action.yml documents only a bare `version` input, no format guidance
 - **Target repo:** wasmerio/setup-wasmer
