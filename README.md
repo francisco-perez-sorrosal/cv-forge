@@ -49,13 +49,14 @@ Then restart Claude Code.
 
 ### Claude Desktop
 
-Add a custom connector:
+The server is remote, so there is nothing to download or run locally. Add it as a custom connector:
 
-1. Open Claude Desktop Settings
-2. Go to Connections (or Extensions)
-3. Add a custom connector with the MCP URL: `https://fps-cv-mcp.wasmer.app/mcp`
+1. Open Claude Desktop → Settings → Connectors
+2. Choose "Add custom connector"
+3. Name it (for example `Francisco's CV`) and enter the URL `https://fps-cv-mcp.wasmer.app/mcp`; no authentication is required
+4. Save, then enable the connector from the tools menu of a conversation
 
-The MCP server fetches CV data from GitHub Release assets. If you have local CV data (the `cv` repository cloned), set `CV_DATA_DIR=<path>` to render against that instead.
+The server always serves the latest published release of the `cv` repository; you never need to update the connector after a new CV release. The two skills (`cv-analyst`, `cv-tailoring`) are Claude Code plugin content; in Claude Desktop, the `summarize_cv` tool provides the summarization capability instead, and the raw tools (`get_cv`, `get_cv_sections`, `query_work`, …) are available directly.
 
 ## Usage
 
