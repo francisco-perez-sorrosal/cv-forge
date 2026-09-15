@@ -19,34 +19,30 @@ Install the consumer plugin from the marketplace:
 
 ```bash
 claude plugin marketplace add francisco-perez-sorrosal/bit-agora
-claude plugin install cv
+claude plugin install cv@bit-agora --scope user
 ```
 
 Both the `cv` (consumer) and `cv-forge` (maintainer) plugins are available. Install `cv` for end-user CV access; additionally install `cv-forge` if you need to edit CV data or manage releases.
 
 #### Configuration (for the maintainer plugin only)
 
-If you install `cv-forge`, configure the plugin to find your cloned repositories:
+The maintainer plugin needs the paths of your local clones. Pass them at install time; the values are validated against the manifest and stored in your user settings:
 
 ```bash
-claude plugin configure cv-forge --scope user --config cv_repo_path=/Users/you/dev/cv
+claude plugin install cv-forge@bit-agora --scope user \
+  --config cv_repo_path=/Users/you/dev/cv \
+  --config cv_forge_path=/Users/you/dev/cv-forge
 ```
 
-Optionally add the `cv-forge` repository path:
-
-```bash
-claude plugin configure cv-forge --scope user --config cv_forge_path=/Users/you/dev/cv-forge
-```
-
-Both paths must be absolute. The `cv_repo_path` is required; `cv_forge_path` is optional (falls back to `cv-forge` on `PATH`).
+Both paths must be absolute. `cv_repo_path` is required; `cv_forge_path` is optional (without it the skills fall back to a `cv-forge` executable on `PATH`, and the deploy skill refuses to run). To change a value, uninstall and reinstall with the new `--config`. The interactive `/plugin configure` command only sees project-scoped installs, so it reports the user-scoped plugin as "not installed in this project".
 
 #### Update plugins
 
 To pick up new releases of the plugins:
 
 ```bash
-claude plugin update cv
-claude plugin update cv-forge
+claude plugin update cv@bit-agora
+claude plugin update cv-forge@bit-agora
 ```
 
 Then restart Claude Code.
