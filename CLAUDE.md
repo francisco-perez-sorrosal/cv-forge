@@ -110,14 +110,24 @@ claude plugin install cv
 
 Marketplace entries carry no `version` field; version is propagated from `pyproject.toml` at release time.
 
-## WASIX Dependency Pins
+## Deployment and Runtime
+
+### WASIX Dependency Pins
 
 The MCP server runs on Wasmer Edge (WASIX runtime). Three dependencies are pinned to ceiling versions due to WASIX package index availability:
-- `pydantic>=2.12,<2.13.5` — WASIX index caps at `2.13.4`; ceiling is the published max, not a compat concern
+- `pydantic>=2.12,<2.13.5` — WASIX index caps at `2.13.4`
 - `cryptography>=43,<50.0.1` — Required by `mcp`'s `pyjwt[crypto]`
 - `cffi>=2.1,<2.1.1` — Required by cryptography
 
-`scripts/check_wasix_ceilings.py` validates the ceilings at CI time.
+`scripts/check_wasix_ceilings.py` validates the ceilings at CI time. **Additional vendoring:** `WASIX_VENDOR_PINS` in `scripts/deploy.sh` pins specific `+wasix.N` builds and renames their extension suffixes to match the Edge interpreter — see `README_DEV.md § Edge Runtime: WASIX Dependency Vendoring`.
+
+### Outbound HTTPS and Certificate Verification
+
+The WASIX Python image has no CA certificate store. New code making outbound HTTPS calls must pass an explicit SSL context from `certifi`. See `README_DEV.md § Networking and TLS Verification` for the pattern.
+
+### Deployment and Release Documentation
+
+Complete deployment runbooks: `README_DEV.md` (local and CI deploy, vendor pins, WASIX diagnostics) and `RELEASE_PROCESS.md` (SemVer and CalVer workflows, tag triggers, republishing). CI uses `setup-wasmer` with `version: 'v7.4.1'` (with the `v`); TinyTeX installs specific TeX Live packages — see both docs for details. Known issues and friction reports live in `FEEDBACK.md`.
 
 ## Jinja2/LaTeX Template Gotchas
 

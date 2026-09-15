@@ -13,14 +13,43 @@ A suite of tools for working with Francisco Perez-Sorrosal's CV and professional
 
 ### Claude Code (Recommended)
 
-Install both plugins from bit-agora:
+#### First-time install
+
+Install the consumer plugin from the marketplace:
 
 ```bash
 claude plugin marketplace add francisco-perez-sorrosal/bit-agora
 claude plugin install cv
 ```
 
-This installs the MCP server (remote, on Wasmer Edge) plus both agent skills. The `cv` plugin is the entry point for end users; the `cv-forge` plugin is for the maintainer.
+Both the `cv` (consumer) and `cv-forge` (maintainer) plugins are available. Install `cv` for end-user CV access; additionally install `cv-forge` if you need to edit CV data or manage releases.
+
+#### Configuration (for the maintainer plugin only)
+
+If you install `cv-forge`, configure the plugin to find your cloned repositories:
+
+```bash
+claude plugin configure cv-forge --scope user --config cv_repo_path=/Users/you/dev/cv
+```
+
+Optionally add the `cv-forge` repository path:
+
+```bash
+claude plugin configure cv-forge --scope user --config cv_forge_path=/Users/you/dev/cv-forge
+```
+
+Both paths must be absolute. The `cv_repo_path` is required; `cv_forge_path` is optional (falls back to `cv-forge` on `PATH`).
+
+#### Update plugins
+
+To pick up new releases of the plugins:
+
+```bash
+claude plugin update cv
+claude plugin update cv-forge
+```
+
+Then restart Claude Code.
 
 ### Claude Desktop
 

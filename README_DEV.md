@@ -222,6 +222,58 @@ export WASMER_TOKEN=<your-token>
 
 Run `scripts/check_wasix_ceilings.py` to validate pins before deploying.
 
+### Edge Runtime: WASIX Dependency Vendoring
+
+The Edge runtime is a WASIX-native Python 3.13 build (wasi-threads ABI). The WASIX package index may publish wheels with different extension suffixes than the Edge interpreter probes, and package versions may be republished with changed ABIs under the same public version. `scripts/deploy.sh` vendors pinned `+wasix.N` builds to protect against both.
+
+**Why it matters:** A rebuild of `pydantic-core` or `cffi` under the same public version can ship a different extension suffix (e.g., `wasi` vs. `wasi-threads`), causing a silent `ModuleNotFoundError` at import time on Edge even though the package resolved and installed cleanly. See `FEEDBACK.md: F-006, F-011` for details.
+
+**The vendor shim:**
+- `WASIX_VENDOR_PINS` in `scripts/deploy.sh` lists the pinned versions (e.g., `cffi==2.1.0+wasix.3 pydantic-core==2.46.4+wasix.2`)
+- `vendor/wasix/` directory (created during staging) holds those wheels with renamed `.so` files matching the Edge interpreter's expected suffixes
+- `main.py` prepends `vendor/wasix` to `sys.path`, ensuring pinned versions load before site-packages
+
+**To update the pins:** Modify `WASIX_VENDOR_PINS` in `scripts/deploy.sh` and run `./scripts/deploy.sh --dry-run` to verify the new builds download and rename correctly. If `/healthz` or `wasmer app logs` show `ModuleNotFoundError` for a native module after a deploy, update the pin list with the next `+wasix.N` label and redeploy.
+
+### Networking and TLS Verification
+
+The WASIX Python image has no CA certificate store by default. Any outbound HTTPS request with default TLS verification fails with `CERTIFICATE_VERIFY_FAILED`. The MCP server uses `certifi` to provide roots: `src/cv_forge/data/release.py` creates an SSL context explicitly and passes it to the HTTP client. Any new code that makes outbound HTTPS calls must do the same:
+
+```python
+import ssl
+import certifi
+
+ssl_context = ssl.create_default_context(cafile=certifi.where())
+# pass ssl_context to httpx2, requests, urllib, etc. as verify=ssl_context
+```
+
+### Deployment Security
+
+Two environment variables control DNS-rebinding protection on the MCP server:
+
+- **`CV_TRUST_HOST`** — Set to `1` on Wasmer Edge (where the platform validates the public hostname in front of the app). Disables the SDK's DNS-rebinding check entirely. **Never set in development** (or set to empty string); local testing relies on the check to reject spoofed requests.
+- **`CV_ALLOWED_ORIGINS`** — Comma-separated list of allowed origins, e.g. `http://localhost:3000,http://127.0.0.1:3001`. Extends the built-in list (`127.0.0.1`, `localhost`, `[::1]`, `testserver`) without disabling the check.
+
+The check rejects ASGI requests whose `Host` or `Origin` header does not match an allowed value. This is the SDK's built-in protection against DNS-rebinding attacks and is left enabled except on Wasmer Edge.
+
+### Deployment Verification
+
+**Health check endpoint:** `GET https://fps-cv-mcp.wasmer.app/healthz`
+
+Returns 200 only when a validated snapshot is loaded. The JSON body includes:
+- `status: "ok"` — snapshot loaded and valid
+- `origin.kind` — `"baked"` (startup), `"release"` (fetched from GitHub), or `"local_dir"` (from `CV_DATA_DIR`)
+- `last_error` — empty string if healthy; error message if refresh failed
+- `consecutive_failures` — count of consecutive failed refresh attempts
+- `cv_forge_version` — detected from `pyproject.toml` or reported as `"unknown"` if running from a bundle
+
+**Diagnostic tools:**
+- `wasmer app logs fps-cv-mcp` — tails live stderr + structured logs (errors, refresh attempts)
+- `wasmer app env fps-cv-mcp` — displays environment variables set in the app's configuration
+- HTTP response header `x-edge-request-outcome` — indicates platform-level request routing (`workload_success`, `workload_failure`, etc.)
+
+Note: `wasmer deploy` probes `/` (not configurable) and reports a false "fails with a non-success status code of 404" for apps serving only `/mcp` and `/healthz` — this is expected and does not indicate a failure. The real proof is a 200 response from `/healthz`.
+
 ## Development Workflow
 
 ### Adding a New Render Format

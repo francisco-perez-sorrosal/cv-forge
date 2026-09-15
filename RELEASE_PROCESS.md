@@ -55,14 +55,31 @@ git push origin main v0.0.6 v0
 When a `v*` tag is pushed, `.github/workflows/deploy-mcp.yml` automatically:
 
 1. Checks out the code at that tag
-2. Validates the WASIX dependency ceilings
-3. Uses `anybuild` to build a Wasmer-compatible bundle
+2. Validates the WASIX dependency ceilings via `scripts/check_wasix_ceilings.py`
+3. Uses `anybuild` to build a Wasmer-compatible bundle (same `scripts/deploy.sh` path as the manual flow)
 4. Uploads the bundle to Wasmer Edge app `fps-cv-mcp`
 5. Polls `/healthz` to verify the server is live
 6. Reports success or failure
 
 **Requirements:**
 - `WASMER_TOKEN` secret must be set in this repo's GitHub Settings > Secrets and variables > Actions
+
+**Critical: setup-wasmer version format**
+The workflow uses `wasmerio/setup-wasmer@v3.1` with `version: 'v7.4.1'` (with the `v` prefix). The action passes the version string to the installer, which downloads from GitHub releases using that exact tag. Without the `v` prefix, the download 404s and the action exits 0 with nothing installed — so the version field must include the `v`. This is not documented in the action's `action.yml`; see `FEEDBACK.md: F-005, F-008` for the upstream issue.
+
+### Publish Workflow: LaTeX and PDF Generation
+
+The reusable publish workflow (`.github/workflows/publish.yml`, invoked by the `cv` repository) renders the CV to PDF using TinyTeX on a clean `ubuntu-latest` runner. The workflow installs a curated set of TeX Live packages via `tlmgr`:
+
+**Required TeX packages (installed by CI):**
+- Core: `moderncv`, `geometry`, `babel`, `babel-english`, `xcolor`
+- Fonts: `fontawesome6`, `fontawesome5`, `academicons`, `marvosym`, `lmodern` (collection-fontsrecommended), `multirow`, `arydshln`
+- Collections: `collection-fontsrecommended` (required fonts), `collection-pictures` (pgf/tikz for moderncv), `collection-latexrecommended` (microtype, fancyhdr)
+- Utilities: `enumitem`, `multibib`, `amsfonts`, `hyperref`, `etoolbox`, `biblatex`, `biber`, `latexmk`, `collection-latex`
+
+**Why this set matters:** MacTeX and TinyTeX diverged between 2024 and 2026. The templates use hardcoded LaTeX macros from `moderncv`, which now requires `fontawesome6` instead of the older `fontawesome5`. The full set ensures both local (MacTeX) and CI (TinyTeX) produce byte-identical PDFs (verify by comparing page count and `pdftotext` output after the first publish; see `FEEDBACK.md: F-009` for the TeX Live lag discovery).
+
+**Rendering step:** The publish workflow runs `pixi run --manifest-path cv-forge/pyproject.toml cv-forge render -f all --release-tag <ref>` using absolute paths (`$GITHUB_WORKSPACE`) for data and output directories, since `--manifest-path` changes the working directory. The `--release-tag` parameter embeds the pushed ref into the HTML output's `<meta name="cv-release-tag" content="...">` and footer; the same tag is asserted present in the site liveness check (REQ-06).
 
 ### Release Assets
 
@@ -80,6 +97,30 @@ The publish workflow (in the `cv` repository) generates eight stable assets unde
 | `release.json` | JSON | Release metadata and asset manifest |
 
 These assets are **stable and version-free** — they are always available under `releases/latest/download/`.
+
+## Republishing an Existing Release
+
+To re-run the publish workflow without creating a new tag (for example, if the render output changed but the CV data did not):
+
+```bash
+gh workflow run publish.yml \
+  --repo francisco-perez-sorrosal/cv \
+  -f tag=2026.09.14
+```
+
+Or via the GitHub Actions UI:
+1. Open Actions → Publish CV workflow
+2. Click "Run workflow" (top right)
+3. Enter the tag in the `ref` input field
+4. Click "Run workflow"
+
+**What happens:**
+- The reusable workflow runs again at the exact same tag
+- Release assets are regenerated and uploaded with `--clobber` (overwrites existing files)
+- The HTML site is redeployed
+- The MCP server automatically fetches the updated release assets within its next refresh interval (15 minutes by default)
+
+This is useful when templates change (and hence PDF/HTML output changes) without data edits. All assets remain at the same version-free URL (`releases/latest/download/<name>`).
 
 ## cv (Data) Repository Release (CalVer)
 
@@ -181,6 +222,16 @@ If a CV release is bad:
    ```
 
 This triggers a new publish with the reverted data.
+
+### Tag Triggers Summary
+
+| Tag pattern | Repository | Workflow triggered | Result |
+|-------------|------------|-------------------|--------|
+| `vX.Y.Z` (SemVer) | `cv-forge` | `.github/workflows/deploy-mcp.yml` | Builds and deploys the MCP server to `fps-cv-mcp` Wasmer app |
+| `v<MAJOR>` alias | `cv-forge` | None — consumed by the `cv` plugin and marketplace only | Points to the latest `vX.Y.Z` release; no workflow trigger |
+| `YYYY.MM.DD[.N]` (CalVer) | `cv` | `.github/workflows/publish.yml` (calls `cv-forge`'s reusable workflow) | Renders CV in all formats, publishes eight release assets, deploys HTML to `fps-cv` Wasmer app |
+
+**Note:** The `v1` alias (moving major version tag in `cv-forge`) is consumed by the consumer plugin's MCP URL and the publish workflow's reusable workflow reference (`@v1`). It is never a published release tag itself — only the latest `v1.x.x` SemVer release is deployed.
 
 ## Verifying a Deployment
 
