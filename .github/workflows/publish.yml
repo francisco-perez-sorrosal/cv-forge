@@ -1,10 +1,10 @@
 name: Publish CV
 
 # Reusable workflow, called by `cv` (the data repo) on a tag push or a
-# maintainer-dispatched republish. See SYSTEMS_PLAN.md § Cross-Repo
+# maintainer-dispatched republish. See RELEASE_PROCESS.md (cross-repo
 # Contract §1 for the frozen input/secret/asset contract this file
 # implements -- do not change the input names or the asset filenames
-# without a `v2` (SYSTEMS_PLAN.md's coupling is `@v1`, a moving major tag).
+# without a `v2` (the caller pins `@v1`, a moving major tag).
 
 on:
   workflow_call:
@@ -39,7 +39,7 @@ on:
         required: false
 
 # The caller supplies `permissions: contents: write` and its own
-# GITHUB_TOKEN creates the release (SYSTEMS_PLAN.md § Cross-Repo Contract
+# GITHUB_TOKEN creates the release (cross-repo contract in RELEASE_PROCESS.md
 # §1) -- this workflow requests only what it uses.
 permissions: {}
 

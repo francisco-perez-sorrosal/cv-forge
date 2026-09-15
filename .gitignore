@@ -299,3 +299,7 @@ rendered-cv/
 # Deploy scaffolding: staged/generated at deploy or publish time, never committed
 baked/
 deploy/site/public/
+
+# Praxion pipeline scratch and local observation WAL
+.ai-work/
+.ai-state/observations*

@@ -8,14 +8,14 @@ paths (`--help`, `--version`, bad `choices`) still raise `SystemExit`; `main`
 is the only place that catches it and turns it back into a return value.
 
 Five real commands (`render`, `validate`, `export-schemas`, `fetch-snapshot`,
-`serve`) per `INTERFACE_DESIGN.md §1.1` -- this step implements `render` and
+`serve`) -- this module implements `render` and
 registers the other four as stubs that exit 2, so `--help` already shows the
 full grammar (M1.14/M1.16 fill the stub bodies in).
 
 No walk-up discovery: the old `PROJECT_ROOT = Path(__file__).parent.parent`
 pattern is retired, not relocated (§1.2). A data directory is named
 explicitly -- `--data-dir`, then `$CV_DATA_DIR` -- or `render`/`validate`
-exit 2. `render`'s `-o/--out` has no documented default in `INTERFACE_DESIGN.md
+exit 2. `render`'s `-o/--out` default was left open by the original design
 §1.2`; the orchestrator resolved it to `rendered-cv/` (relative to the
 current directory) since that already names the gitignored quick-render
 workspace `scripts/render_cv.py` used before this CLI replaced it.

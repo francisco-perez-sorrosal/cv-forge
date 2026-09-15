@@ -24,7 +24,7 @@ parameter and call `get_store()`/`get_provider()` with no arguments -- reach
 *this app's* provider even when a second `create_app()` runs in the same
 process.
 
-A 503 `no_validated_snapshot` response (`INTERFACE_DESIGN.md` §3.2) has no
+A 503 `no_validated_snapshot` response (part of the documented health contract) has no
 code path here: `provider` is a required, already-validated
 `CvDataProvider` (Invariant I2), so there is no in-process call shape that
 reaches "loaded, but no data yet" -- that state is only observable from
@@ -175,7 +175,7 @@ def _healthz_handler(provider: CvDataProvider):
 
 
 def _healthz_body(provider: CvDataProvider) -> dict[str, object]:
-    """`INTERFACE_DESIGN.md` §3.2's `200` body.
+    """The health endpoint's `200` body.
 
     `refresh_state` is the discriminator for the optional fields:
     `consecutive_failures`/`last_success_at` appear on `Fresh`/`Stale` only,

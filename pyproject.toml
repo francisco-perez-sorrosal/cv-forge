@@ -37,6 +37,9 @@ dependencies = [
     # CA bundle for the release fetcher: httpx2 verifies via the OS trust
     # store (truststore), which the WASIX image does not have.
     "certifi>=2025.1",
+    # The release fetcher's HTTP client (pydantic's httpx fork, also what
+    # mcp 2.x uses) -- declared because production code imports it directly.
+    "httpx2>=2.5,<3",
 ]
 
 [project.urls]

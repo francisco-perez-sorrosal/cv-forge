@@ -13,7 +13,7 @@ Raises `LocalDataDirError`, `InvalidRefreshIntervalError` or
 `InvalidCvDataError` on a misconfigured environment; this module never
 prints or exits -- that is each driver's own concern (a CLI's exit code
 table is not this module's to pick). `describe_startup_error()` maps any of
-the three onto the ready-to-render `INTERFACE_DESIGN.md §1.6` message once,
+the three onto the ready-to-render three-part startup message once,
 here, so every driver renders identical text for identical failures instead
 of each re-deriving it from the raw exception -- in particular,
 `pydantic.ValidationError` is a `ValueError` subclass, so a caller that
@@ -65,7 +65,7 @@ class InvalidCvDataError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class StartupError:
-    """A ready-to-print `INTERFACE_DESIGN.md §1.6` three-part message plus
+    """A ready-to-print three-part message (what / why / how) plus
     its `§1.3` exit code."""
 
     what: str

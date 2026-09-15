@@ -1,0 +1,5 @@
+# Calibration Log
+
+| Timestamp | Task | Signals | Recommended Tier | Actual Tier | Source | Retrospective |
+|-----------|------|---------|-------------------|--------------|--------|----------------|
+| 2026-09-13T11:00:00Z | Split the dual-branch cv repo into data-only `cv` + machinery `cv-forge` (MCP on Wasmer Edge, renderers, publish workflow, two plugins) | F:9+ B:5+ A:1 P:1 T:1 C:1 (cross-cutting, two repos, external deploys) | Full | Full | recommended | correct — 172 files, 52 planned steps + 4 review-derived revisions, 6 phases incl. two one-way cutovers; three research lenses + interface-design pass paid off (SDK 2.x migration, WASIX ceilings, native plugin MCP declaration were all research-found). What cost the most was un-emulatable deploy behaviour: the WASIX cffi ABI mismatch, the missing CA store, and CI tooling quirks (setup-wasmer version prefix, pixi cwd, TinyTeX package set) took ~7 release/publish iterations to shake out — each captured in FEEDBACK.md. Pair-review on tier:H steps caught 3 real defects (PDF cache key, process-global provider, unguarded refresh loop). |

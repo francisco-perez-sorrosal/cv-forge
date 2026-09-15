@@ -16,7 +16,7 @@ express on its own:
   families). This check restores the constraint at the layer that knows
   which family it's looking at.
 
-Findings are shaped per `INTERFACE_DESIGN.md §1.4`: `severity`, `code`
+Findings share one shape across `validate` and the CLI's JSON envelope: `severity`, `code`
 (`schema.*`/`xref.*`), a JSON Pointer `pointer`, a `message`, and an
 optional did-you-mean `hint`.
 """

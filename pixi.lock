@@ -471,7 +471,7 @@ packages:
 - pypi: .
   name: cv-forge
   version: 1.0.7
-  sha256: ef8e92c5b7208dd2fcb9d32d6765a645ee95647585fe0ae45ccbfbd16791cce4
+  sha256: b0eeb25e485f68803e997efd92cae931d16f4fb97696c5a516daf984bdd55e8a
   requires_dist:
   - mcp>=2.2,<3
   - loguru>=0.7.3,<0.8
@@ -481,6 +481,7 @@ packages:
   - cryptography>=43,<50.0.1
   - cffi>=2.1,<2.1.1
   - certifi>=2025.1
+  - httpx2>=2.5,<3
   requires_python: '>=3.13'
   editable: true
 - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl

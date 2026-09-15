@@ -186,12 +186,13 @@ class GitHubReleaseFetcher:
             return data
         try:
             return ReleaseManifest.model_validate_json(data)
-        except ValueError:
+        except ValueError as exc:
             return ArtifactUnavailable(
                 name=RELEASE_MANIFEST_ASSET,
                 tag=self._tag,
                 download_url=self.download_url(RELEASE_MANIFEST_ASSET),
                 reason=UnavailableReason.HTTP_ERROR,
+                detail=f"malformed release.json: {str(exc).splitlines()[0][:200]}",
             )
 
     async def fetch_asset(self, name: str) -> bytes | ArtifactUnavailable:

@@ -192,7 +192,7 @@ class CvDataProvider:
     def state(self) -> RefreshState:
         return self._state
 
-    # --- Derived, flattened accessors for /healthz (INTERFACE_DESIGN.md §3.2) ---
+    # --- Derived, flattened accessors for /healthz ---
 
     @property
     def current_tag(self) -> str | None:

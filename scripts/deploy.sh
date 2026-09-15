@@ -120,9 +120,11 @@ git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$STAGE"
 BAKED_DIR="$STAGE/baked"
 CV_DATA_REPO="${CV_RELEASE_REPO:-francisco-perez-sorrosal/cv}"
 CV_DATA_REF="${CV_DATA_REF:-main}"
+FETCH_LOG="$STAGE/.fetch-snapshot.log"
 if command -v cv-forge >/dev/null 2>&1 \
-    && cv-forge fetch-snapshot -o "$BAKED_DIR" >/dev/null 2>&1; then
+    && cv-forge fetch-snapshot -o "$BAKED_DIR" >"$FETCH_LOG" 2>&1; then
     echo "deploy.sh: baked fallback fetched from the latest cv release into $BAKED_DIR"
+    rm -f "$FETCH_LOG"
 elif [ -n "${CV_DATA_DIR:-}" ] && [ -f "$CV_DATA_DIR/resume.yaml" ]; then
     echo "deploy.sh: no cv release reachable -- copying CV_DATA_DIR ($CV_DATA_DIR) as the baked fallback"
     rm -rf "$BAKED_DIR"
