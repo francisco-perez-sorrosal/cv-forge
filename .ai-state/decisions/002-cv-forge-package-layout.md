@@ -1,7 +1,8 @@
 ---
-id: dec-draft-8cc49ae3
+id: dec-002
+draft_id: dec-draft-8cc49ae3
 title: One cv_forge package with models/render/data/mcp/cli subpackages, replacing cv_mcp_server
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: The `cv_mcp_server` package is renamed to `cv_forge` and decomposed into five subpackages — `models`, `render`, `data`, `mcp`, `cli` — so that the MCP server is one surface among four rather than the name of the whole thing, and the network/path/pure layers stop sharing a namespace.
@@ -81,7 +82,7 @@ The layering rule is one sentence: **`models/` and `render/` know nothing about 
 
 ## Disconfirmation
 
-**Activation**: no — the layering follows directly from the data-layer decision (`dec-draft-45aafe55`); a lens sweep would restate it.
+**Activation**: no — the layering follows directly from the data-layer decision (`dec-006`); a lens sweep would restate it.
 
 **Falsifier.** This decision is wrong if, six months on, the subpackage boundaries are routinely crossed in the wrong direction — specifically, if any module under `models/` or `render/` imports from `data/`, `mcp/` or `cli/`. That import is mechanically detectable and would mean the decomposition is decorative rather than load-bearing. A lint rule asserting it is cheap and should be added if the boundary is ever observed to slip.
 

@@ -1,7 +1,8 @@
 ---
-id: dec-draft-fb7c5d3f
+id: dec-003
+draft_id: dec-draft-fb7c5d3f
 title: Drop the MCPB bundle subsystem and the MCP registry entry; Claude Desktop uses the remote server as a custom connector
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: The entire MCPB build path (`manifest.json`, `start_mcpb.sh`, `.mcpbignore`, `lib/` vendoring, wheel build, two CI workflows, two design docs, the release SHA256 step) is removed, along with the now-misleading `server.json` registry entry. Claude Desktop reaches the deployed HTTP server as a custom connector.

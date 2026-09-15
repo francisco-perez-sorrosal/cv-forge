@@ -1,7 +1,8 @@
 ---
-id: dec-draft-138f038b
+id: dec-007
+draft_id: dec-draft-138f038b
 title: Two Claude Code plugins under cv-forge/plugins — cv (consumer) and cv-forge (maintainer) — built from skills only
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: >-

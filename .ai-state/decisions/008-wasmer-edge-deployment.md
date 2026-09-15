@@ -1,7 +1,8 @@
 ---
-id: dec-draft-16b56698
+id: dec-008
+draft_id: dec-draft-16b56698
 title: Deploy the MCP server to Wasmer Edge (WASIX) and the HTML CV to a Wasmer static site; decommission render.com after verified cutover
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: The MCP server moves from render.com to a Wasmer Edge Python/WASIX app built with anybuild, and the rendered HTML CV gets a first-class Wasmer static site. Both deploys stage only git-tracked files. render.com stays live until the new endpoint has served real traffic.

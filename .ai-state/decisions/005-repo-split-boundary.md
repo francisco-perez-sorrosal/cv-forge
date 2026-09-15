@@ -1,7 +1,8 @@
 ---
-id: dec-draft-893c5497
+id: dec-005
+draft_id: dec-draft-893c5497
 title: Split the dual-branch cv repository into cv (data-only) and cv-forge (machinery)
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: The `main`/`mcp` dual-branch repository becomes two repositories — `cv` holding only the YAML CV data plus mirrored schemas and two thin workflows, and `cv-forge` holding the models, renderer, CLI, MCP server, plugins and publishing machinery. Both keep full history.
@@ -33,7 +34,7 @@ The codebase inventory verified that `cv-data/` contains nothing but the two YAM
 
 Create `github.com/francisco-perez-sorrosal/cv-forge` for the machinery and reduce `github.com/francisco-perez-sorrosal/cv` to data only.
 
-`cv` keeps `cv-data/*.yaml`, gains `schemas/*.schema.json` (mirrored, see `dec-draft-2fbed258`), two thin workflows (validate on PR, publish on tag), a short README, a data-conventions-only `CLAUDE.md`, a hand-written `.gitignore`, and the LICENSE. It contains no Python, no lockfile, no rendered artifact, and no LaTeX source.
+`cv` keeps `cv-data/*.yaml`, gains `schemas/*.schema.json` (mirrored, see `dec-001`), two thin workflows (validate on PR, publish on tag), a short README, a data-conventions-only `CLAUDE.md`, a hand-written `.gitignore`, and the LICENSE. It contains no Python, no lockfile, no rendered artifact, and no LaTeX source.
 
 `cv-forge` keeps everything else and gains the reusable publish workflow, the Wasmer deploy configuration, and the two Claude Code plugins.
 
@@ -69,7 +70,7 @@ Migration ordering, the two points of no return, and the rollback posture per ph
 - `git clone` lands on a current branch for the first time since 2025-03-20.
 
 **Negative**
-- The cross-repo contract is now a thing that exists and can rot. Mitigated by keeping it to exactly two pinned strings and drift-checking one of them in CI (`dec-draft-2fbed258`).
+- The cross-repo contract is now a thing that exists and can rot. Mitigated by keeping it to exactly two pinned strings and drift-checking one of them in CI (`dec-001`).
 - A change spanning both repositories (e.g. a new YAML field plus the renderer that consumes it) is now two PRs in a required order: schema and renderer first, data second.
 - `cv-forge`'s history carries `cv-data/` blobs that no longer exist in its tree. Accepted as harmless bloat.
 

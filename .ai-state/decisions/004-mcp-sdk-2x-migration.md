@@ -1,7 +1,8 @@
 ---
-id: dec-draft-21e53cfb
+id: dec-004
+draft_id: dec-draft-21e53cfb
 title: Migrate to the official mcp SDK 2.2.0 and pin pydantic below the WASIX ceiling
-status: proposed
+status: accepted
 category: implementation
 date: 2026-09-13
 summary: Move from `mcp[cli]>=1.9.2,<2` to the official `mcp>=2.2,<3` (`FastMCP` → `MCPServer`), keeping the official SDK rather than switching to jlowin's independent `fastmcp` 3.x, and declare `pydantic>=2.12,<2.13.5` and `httpx` as explicit direct dependencies.
@@ -100,4 +101,4 @@ Two 2.2.0 API details were **not** verified by research and must be checked agai
 
 Not required for `category: implementation`. Recorded anyway, because the pin is load-bearing for the deployment:
 
-**Reversal trigger.** If a `pydantic` CVE lands above `2.13.5` and the WASIX index has not published a matching `pydantic-core` within two weeks, the deployment decision (`dec-draft-16b56698`) reverses to render.com rather than this pin being relaxed — the pin is a consequence of the platform, and the platform is the reversible half.
+**Reversal trigger.** If a `pydantic` CVE lands above `2.13.5` and the WASIX index has not published a matching `pydantic-core` within two weeks, the deployment decision (`dec-008`) reverses to render.com rather than this pin being relaxed — the pin is a consequence of the platform, and the platform is the reversible half.

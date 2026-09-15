@@ -194,11 +194,11 @@ Deployment decisions are recorded as ADRs in `.ai-state/decisions/`. This sectio
 
 | ADR | Decision | Impact on Deployment |
 |-----|----------|---------------------|
-| `dec-draft-16b56698` | Wasmer Edge for the MCP server and a Wasmer static site for the HTML CV; render.com decommissioned after verified cutover | Defines both deployables, the staged-deploy discipline, and the live-poke verification that replaces an absent pre-deploy gate |
-| `dec-draft-45aafe55` | Runtime data via `CvDataProvider` — baked snapshot at startup, `release.json`-gated refresh, render-what-we-can / fetch-only-the-PDF | Makes availability independent of GitHub, defines `/healthz`'s body, and sets the refresh interval that bounds rate-limit exposure |
-| `dec-draft-2fbed258` | Publish topology: reusable workflow owned by `cv-forge`, called from `cv`; pull-only schema mirror | Defines the release-asset contract the server fetches from, and keeps `WASMER_TOKEN` the only secret in either repository |
-| `dec-draft-21e53cfb` | Migrate to `mcp` 2.2.0; pin `pydantic>=2.12,<2.13.5` | The pin is a deployment constraint, not a compatibility one — it exists because of the WASIX `pydantic-core` ceiling |
-| `dec-draft-fb7c5d3f` | Drop MCPB and the MCP registry entry | Removes the local-distribution deployable entirely; Claude Desktop reaches the same remote endpoint as a custom connector |
+| `dec-008` | Wasmer Edge for the MCP server and a Wasmer static site for the HTML CV; render.com decommissioned after verified cutover | Defines both deployables, the staged-deploy discipline, and the live-poke verification that replaces an absent pre-deploy gate |
+| `dec-006` | Runtime data via `CvDataProvider` — baked snapshot at startup, `release.json`-gated refresh, render-what-we-can / fetch-only-the-PDF | Makes availability independent of GitHub, defines `/healthz`'s body, and sets the refresh interval that bounds rate-limit exposure |
+| `dec-001` | Publish topology: reusable workflow owned by `cv-forge`, called from `cv`; pull-only schema mirror | Defines the release-asset contract the server fetches from, and keeps `WASMER_TOKEN` the only secret in either repository |
+| `dec-004` | Migrate to `mcp` 2.2.0; pin `pydantic>=2.12,<2.13.5` | The pin is a deployment constraint, not a compatibility one — it exists because of the WASIX `pydantic-core` ceiling |
+| `dec-003` | Drop MCPB and the MCP registry entry | Removes the local-distribution deployable entirely; Claude Desktop reaches the same remote endpoint as a custom connector |
 
 ## 10. Runbook Quick Reference
 

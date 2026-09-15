@@ -1,7 +1,8 @@
 ---
-id: dec-draft-45aafe55
+id: dec-006
+draft_id: dec-draft-45aafe55
 title: MCP server sources CV data from cv GitHub Release assets via CvDataProvider, with a baked fallback
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: A new `data/` layer replaces the import-time local-directory load. `CvDataProvider` starts from a snapshot baked into the deploy image, then refreshes from `cv`'s latest GitHub Release on a `release.json`-gated interval, swapping an immutable `CvDataSnapshot` atomically. The server renders every format it can compute and fetches only the compiled PDF.

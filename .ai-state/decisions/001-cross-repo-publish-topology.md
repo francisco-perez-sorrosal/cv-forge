@@ -1,7 +1,8 @@
 ---
-id: dec-draft-2fbed258
+id: dec-001
+draft_id: dec-draft-2fbed258
 title: Publish via a cv-forge-owned reusable workflow called from cv, with a pull-only schema mirror
-status: proposed
+status: accepted
 category: architectural
 date: 2026-09-13
 summary: A tag push on `cv` calls `cv-forge`'s reusable `publish.yml@v1`, which renders every format, attaches eight stable-named assets to a GitHub Release on `cv`, and deploys the HTML to a Wasmer static site. JSON Schemas are generated in `cv-forge` and mirrored into `cv`, synced by pull and drift-checked in CI. Neither repository ever pushes into the other.
@@ -19,7 +20,7 @@ affected_reqs: [REQ-01, REQ-02, REQ-03, REQ-04, REQ-05, REQ-06, REQ-08]
 
 ## Context
 
-Splitting the repositories (`dec-draft-893c5497`) creates two problems that must be solved together, because the obvious solution to each is a credential.
+Splitting the repositories (`dec-005`) creates two problems that must be solved together, because the obvious solution to each is a credential.
 
 **Rendering lives in the wrong repo for the trigger.** The natural trigger for "publish a new CV" is a tag on `cv`, where the data lives. But every tool needed to render it — `pixi`, the Jinja2 templates, TinyTeX, `typst` — lives in `cv-forge`. Either `cv` grows a full Python toolchain (undoing the split), or it reaches into `cv-forge`.
 
